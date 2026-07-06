@@ -1,24 +1,28 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Probexa",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "probexa",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.futuresanalyzer.ilz0zm"
+      "bundleIdentifier": "com.emergent.futuresanalyzer.ilz0zm",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#0B0E14"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.futuresanalyzer.ilz0zm"
+      "package": "com.emergent.futuresanalyzer.ilz0zm",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "bundler": "metro",
@@ -27,13 +31,14 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#0B0E14"
         }
       ]
     ],
