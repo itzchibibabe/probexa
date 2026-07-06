@@ -1,0 +1,47 @@
+{
+  "summary": "Backend-only regression for new Probexa features (Goal Tracker, Trades, updated Setup schema with market_structure + display_checklist). Created /app/backend/tests/test_goals_trades.py with 14 targeted tests covering: GET/PUT /api/goals, GET /api/goals/summary, POST/GET/DELETE /api/trades, balance update side-effects, discipline flags (daily_goal_hit / daily_loss_hit), 401-without-token cases, updated /api/setup/{symbol} schema for BTCUSDT & ETHUSDT, and display_checklist presence in every /api/scan best_setups/preparing item. Result: 14/14 PASSED. All new endpoints and schema updates work correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/trades",
+        "issue": "If user has never called PUT /api/goals, no user_goals doc exists, and current_balance is silently not updated when a trade is logged. Consider auto-creating a goals doc with defaults on first trade, or documenting that goals must be initialised first."
+      },
+      {
+        "endpoint": "GET /api/goals/summary",
+        "issue": "consecutive_wins/consecutive_losses only counts the trailing streak from the most-recent trade (works as specified). Flag if UX expects longest-ever streak."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_goals_trades.py",
+    "/app/test_reports/pytest/goals_trades_results.xml"
+  ],
+  "action_items": [
+    "(Optional, minor) In POST /api/trades, upsert a user_goals doc with DEFAULT_GOALS + starting_balance=0 when none exists, so current_balance tracking works even before the user has explicitly set goals."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~890 lines and approaching the 700-line soft limit. Consider splitting goals/trades into a router module (routes/goals.py) for maintainability.",
+    "No MongoDB indexes on `trades` (recommend user_id, closed_at) or `user_goals` (user_id). Fine at current scale but recommended before growth.",
+    "GET /api/trades returns up to 500 items with no pagination \u2014 add limit/skip query params before scaling.",
+    "scan_engine._display_checklist correctly returns exactly the 6 required keys for long/short/neutral cases \u2014 verified in tests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_goals_trades.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "Tests create/delete their own trades and PUT goals to a known baseline before each flow. Every test cleans up its trades via DELETE /api/trades/{trade_id}.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New endpoints covered by test_goals_trades.py: GET/PUT /api/goals, GET /api/goals/summary, POST/GET/DELETE /api/trades. /api/setup/{symbol} and /api/scan now include market_structure + display_checklist (exactly 6 keys: 'Trend Confirmed', 'EMA Alignment', 'Support Holding', 'Volume Confirmation', 'Breakout Confirmed', 'Retest Complete'). Iteration_1 already covered auth/market/analyze/watchlist/alerts/journal/calculator/push \u2014 no need to re-run those. Bearer token: test-token-abc-123 for user_test001.",
+  "rca_of_issue": "N/A \u2014 no failures observed. All 14 tests passed."
+}

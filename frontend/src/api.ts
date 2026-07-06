@@ -62,6 +62,13 @@ export const api = {
 
   journal: () => request<{ items: any[] }>("/journal"),
 
+  goals: () => request<any>("/goals"),
+  saveGoals: (payload: any) => request("/goals", { method: "PUT", body: JSON.stringify(payload) }),
+  goalsSummary: () => request<any>("/goals/summary"),
+  trades: () => request<{ items: any[] }>("/trades"),
+  logTrade: (payload: any) => request("/trades", { method: "POST", body: JSON.stringify(payload) }),
+  delTrade: (id: string) => request(`/trades/${id}`, { method: "DELETE" }),
+
   calculator: (payload: any) =>
     request("/calculator", { method: "POST", body: JSON.stringify(payload) }, false),
 

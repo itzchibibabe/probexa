@@ -159,6 +159,38 @@ def _action(direction: str, score: int, confidence: int) -> str:
     return "WAIT"
 
 
+def _display_checklist(snap: Dict[str, Any], direction: str, cond: Dict[str, bool]) -> Dict[str, bool]:
+    """Return a standardized 6-item live checklist for the UI."""
+    price = snap["price"]
+    ema20 = snap["ema20"]
+    if direction == "long":
+        return {
+            "Trend Confirmed": snap["trend"] == "bullish" or (snap["ema20"] > snap["ema50"]),
+            "EMA Alignment": snap["ema20"] > snap["ema50"] > snap["ema200"],
+            "Support Holding": price > snap["support"] * 1.001,
+            "Volume Confirmation": snap["volume_spike"] or snap["volume"] > snap["volume_avg20"],
+            "Breakout Confirmed": price > snap["resistance"] * 0.998,
+            "Retest Complete": price > ema20 and 45 <= snap["rsi"] <= 70,
+        }
+    if direction == "short":
+        return {
+            "Trend Confirmed": snap["trend"] == "bearish" or (snap["ema20"] < snap["ema50"]),
+            "EMA Alignment": snap["ema20"] < snap["ema50"] < snap["ema200"],
+            "Support Holding": price < snap["resistance"] * 0.999,
+            "Volume Confirmation": snap["volume_spike"] or snap["volume"] > snap["volume_avg20"],
+            "Breakout Confirmed": price < snap["support"] * 1.002,
+            "Retest Complete": price < ema20 and 30 <= snap["rsi"] <= 55,
+        }
+    return {
+        "Trend Confirmed": False,
+        "EMA Alignment": False,
+        "Support Holding": False,
+        "Volume Confirmation": False,
+        "Breakout Confirmed": False,
+        "Retest Complete": False,
+    }
+
+
 def build_setup(symbol: str, klines: List) -> Dict[str, Any]:
     if not klines or len(klines) < 60:
         return None
@@ -199,12 +231,14 @@ def build_setup(symbol: str, klines: List) -> Dict[str, Any]:
     action = _action(direction, score, confidence)
 
     missing = [CONDITION_LABELS.get(k, k) for k, v in cond.items() if not v]
+    display_checklist = _display_checklist(snap, direction, cond)
 
     return {
         "symbol": symbol,
         "direction": direction,
         "price": snap["price"],
         "trend": snap["trend"],
+        "market_structure": snap["structure"],
         "support": snap["support"],
         "resistance": snap["resistance"],
         "entry": round(entry, 6),
@@ -221,5 +255,6 @@ def build_setup(symbol: str, klines: List) -> Dict[str, Any]:
         "rsi": snap["rsi"],
         "conditions": cond,
         "missing_conditions": missing,
+        "display_checklist": display_checklist,
         "snapshot": snap,
     }

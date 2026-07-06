@@ -605,6 +605,200 @@ async def get_journal(user: dict = Depends(require_user)):
 
 
 # =====================================================
+# GOALS & TRADES — Goal Tracker
+# =====================================================
+class GoalsBody(BaseModel):
+    current_balance: float = 0.0
+    starting_balance: Optional[float] = None
+    target_balance: float = 0.0
+    daily_profit_goal: float = 0.0
+    weekly_profit_goal: float = 0.0
+    monthly_profit_goal: float = 0.0
+    max_daily_loss: float = 0.0
+    max_weekly_loss: float = 0.0
+
+
+DEFAULT_GOALS = {
+    "current_balance": 0.0,
+    "starting_balance": 0.0,
+    "target_balance": 0.0,
+    "daily_profit_goal": 0.0,
+    "weekly_profit_goal": 0.0,
+    "monthly_profit_goal": 0.0,
+    "max_daily_loss": 0.0,
+    "max_weekly_loss": 0.0,
+}
+
+
+@api.get("/goals")
+async def get_goals(user: dict = Depends(require_user)):
+    doc = await db.user_goals.find_one({"user_id": user["user_id"]}, {"_id": 0}) or {}
+    goals = {**DEFAULT_GOALS, **{k: doc.get(k, v) for k, v in DEFAULT_GOALS.items()}}
+    return goals
+
+
+@api.put("/goals")
+async def put_goals(body: GoalsBody, user: dict = Depends(require_user)):
+    update = body.model_dump()
+    # If starting_balance not set, initialise to current_balance on first save
+    existing = await db.user_goals.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if not existing:
+        update["starting_balance"] = body.starting_balance if body.starting_balance is not None else body.current_balance
+    elif update.get("starting_balance") is None:
+        update["starting_balance"] = existing.get("starting_balance", body.current_balance)
+    update["user_id"] = user["user_id"]
+    update["updated_at"] = datetime.now(timezone.utc)
+    await db.user_goals.update_one({"user_id": user["user_id"]}, {"$set": update}, upsert=True)
+    saved = await db.user_goals.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    saved.pop("updated_at", None)
+    return saved
+
+
+class TradeBody(BaseModel):
+    symbol: str
+    side: str  # BUY/SELL
+    pnl: float
+    note: Optional[str] = None
+
+
+@api.post("/trades")
+async def add_trade(body: TradeBody, user: dict = Depends(require_user)):
+    trade_id = f"t_{uuid.uuid4().hex[:12]}"
+    doc = {
+        "trade_id": trade_id,
+        "user_id": user["user_id"],
+        "symbol": body.symbol.upper(),
+        "side": body.side.upper(),
+        "pnl": float(body.pnl),
+        "won": body.pnl > 0,
+        "note": body.note or "",
+        "closed_at": datetime.now(timezone.utc),
+    }
+    await db.trades.insert_one(doc.copy())
+    # Update current_balance in goals
+    goals = await db.user_goals.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    if goals:
+        new_bal = float(goals.get("current_balance", 0)) + float(body.pnl)
+        await db.user_goals.update_one({"user_id": user["user_id"]}, {"$set": {"current_balance": new_bal}})
+    doc.pop("_id", None)
+    doc["closed_at"] = doc["closed_at"].isoformat()
+    return doc
+
+
+@api.get("/trades")
+async def get_trades(user: dict = Depends(require_user)):
+    items = await db.trades.find({"user_id": user["user_id"]}, {"_id": 0}).sort("closed_at", -1).to_list(500)
+    for it in items:
+        if isinstance(it.get("closed_at"), datetime):
+            it["closed_at"] = it["closed_at"].isoformat()
+    return {"items": items}
+
+
+@api.delete("/trades/{trade_id}")
+async def del_trade(trade_id: str, user: dict = Depends(require_user)):
+    doc = await db.trades.find_one({"trade_id": trade_id, "user_id": user["user_id"]}, {"_id": 0})
+    if doc:
+        await db.trades.delete_one({"trade_id": trade_id, "user_id": user["user_id"]})
+        goals = await db.user_goals.find_one({"user_id": user["user_id"]}, {"_id": 0})
+        if goals:
+            new_bal = float(goals.get("current_balance", 0)) - float(doc.get("pnl", 0))
+            await db.user_goals.update_one({"user_id": user["user_id"]}, {"$set": {"current_balance": new_bal}})
+    return {"ok": True}
+
+
+@api.get("/goals/summary")
+async def goals_summary(user: dict = Depends(require_user)):
+    goals = await db.user_goals.find_one({"user_id": user["user_id"]}, {"_id": 0}) or {**DEFAULT_GOALS, "starting_balance": 0.0}
+    for k, v in DEFAULT_GOALS.items():
+        goals.setdefault(k, v)
+    goals.setdefault("starting_balance", goals["current_balance"])
+
+    trades = await db.trades.find({"user_id": user["user_id"]}, {"_id": 0}).sort("closed_at", -1).to_list(1000)
+
+    now = datetime.now(timezone.utc)
+    start_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_week = start_day - timedelta(days=start_day.weekday())
+    start_month = start_day.replace(day=1)
+
+    today_pnl = 0.0
+    week_pnl = 0.0
+    month_pnl = 0.0
+    wins = 0
+    for t in trades:
+        closed = t.get("closed_at")
+        if isinstance(closed, str):
+            try:
+                closed = datetime.fromisoformat(closed.replace("Z", "+00:00"))
+            except Exception:
+                continue
+        if closed.tzinfo is None:
+            closed = closed.replace(tzinfo=timezone.utc)
+        pnl = float(t.get("pnl", 0))
+        if closed >= start_day:
+            today_pnl += pnl
+        if closed >= start_week:
+            week_pnl += pnl
+        if closed >= start_month:
+            month_pnl += pnl
+        if pnl > 0:
+            wins += 1
+
+    total = len(trades)
+    win_rate = round((wins / total) * 100, 1) if total else 0.0
+
+    # Consecutive wins/losses from most recent
+    consec_wins = 0
+    consec_losses = 0
+    for t in trades:
+        if t.get("won"):
+            if consec_losses > 0:
+                break
+            consec_wins += 1
+        else:
+            if consec_wins > 0:
+                break
+            consec_losses += 1
+
+    cb = float(goals["current_balance"])
+    sb = float(goals["starting_balance"])
+    tb = float(goals["target_balance"])
+    total_progress_pct = 0.0
+    if tb > sb:
+        total_progress_pct = round(min(100.0, max(0.0, (cb - sb) / (tb - sb) * 100)), 1)
+    remaining_to_goal = round(max(0.0, tb - cb), 2)
+
+    def pct(cur, goal):
+        if goal <= 0:
+            return 0.0
+        return round(min(100.0, max(-100.0, (cur / goal) * 100)), 1)
+
+    return {
+        "goals": goals,
+        "stats": {
+            "current_balance": round(cb, 2),
+            "starting_balance": round(sb, 2),
+            "target_balance": round(tb, 2),
+            "total_progress_pct": total_progress_pct,
+            "remaining_to_goal": remaining_to_goal,
+            "today_pnl": round(today_pnl, 2),
+            "week_pnl": round(week_pnl, 2),
+            "month_pnl": round(month_pnl, 2),
+            "daily_progress_pct": pct(today_pnl, goals["daily_profit_goal"]),
+            "weekly_progress_pct": pct(week_pnl, goals["weekly_profit_goal"]),
+            "monthly_progress_pct": pct(month_pnl, goals["monthly_profit_goal"]),
+            "daily_loss_pct": pct(-today_pnl if today_pnl < 0 else 0, goals["max_daily_loss"]),
+            "weekly_loss_pct": pct(-week_pnl if week_pnl < 0 else 0, goals["max_weekly_loss"]),
+            "win_rate": win_rate,
+            "total_trades": total,
+            "consecutive_wins": consec_wins,
+            "consecutive_losses": consec_losses,
+            "daily_goal_hit": today_pnl >= goals["daily_profit_goal"] > 0,
+            "daily_loss_hit": goals["max_daily_loss"] > 0 and (-today_pnl) >= goals["max_daily_loss"],
+        },
+    }
+
+
+# =====================================================
 # POSITION SIZE CALCULATOR
 # =====================================================
 class CalcRequest(BaseModel):

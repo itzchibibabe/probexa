@@ -97,7 +97,27 @@ export default function AnalyzeSymbol() {
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : setup ? (
-          <TradeCard setup={setup} timeframe={timeframe} />
+          <>
+            <TradeCard setup={setup} timeframe={timeframe} />
+            <Pressable
+              testID="open-calculator-btn"
+              onPress={() => router.push({
+                pathname: "/(tabs)/tools",
+                params: {
+                  symbol: setup.symbol,
+                  entry: String(setup.entry),
+                  sl: String(setup.stop_loss),
+                  tp1: String(setup.take_profit_1),
+                  tp2: String(setup.take_profit_2),
+                  tp3: String(setup.take_profit_3),
+                },
+              })}
+              style={styles.calcBtn}
+            >
+              <Ionicons name="calculator" size={20} color="#002233" />
+              <Text style={styles.calcBtnText}>Open Smart Position Calculator</Text>
+            </Pressable>
+          </>
         ) : null}
 
         <View style={{ height: 32 }} />
@@ -134,4 +154,9 @@ const styles = StyleSheet.create({
     padding: 14, borderRadius: 12,
   },
   errorText: { color: theme.color.error, fontSize: 13 },
+  calcBtn: {
+    backgroundColor: theme.color.brand, padding: 14, borderRadius: 12,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 4,
+  },
+  calcBtnText: { color: "#002233", fontWeight: "800", fontSize: 15 },
 });

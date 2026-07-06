@@ -10,6 +10,7 @@ import * as Haptics from "expo-haptics";
 import { theme, gradeColor, actionColor } from "@/src/theme";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/AuthContext";
+import { GoalCard } from "@/src/GoalCard";
 
 const TIMEFRAMES = ["15m", "30m", "1h", "4h", "1d"];
 
@@ -18,6 +19,7 @@ export default function Home() {
   const { user, signOut } = useAuth();
   const [timeframe, setTimeframe] = useState("1h");
   const [data, setData] = useState<any>(null);
+  const [goalSummary, setGoalSummary] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -26,8 +28,12 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const r = await api.scan(tf);
-      setData(r);
+      const [scan, gs] = await Promise.all([
+        api.scan(tf),
+        api.goalsSummary().catch(() => null),
+      ]);
+      setData(scan);
+      if (gs) setGoalSummary(gs);
     } catch (e: any) {
       setError(e.message || "Scan failed");
     } finally {
@@ -74,6 +80,24 @@ export default function Home() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.color.brand} />}
         showsVerticalScrollIndicator={false}
       >
+        {/* Discipline banners */}
+        {goalSummary?.stats?.daily_goal_hit && (
+          <View style={[styles.disciplineBanner, { backgroundColor: theme.color.brandSecondary + "22", borderColor: theme.color.brandSecondary }]} testID="discipline-goal-hit">
+            <Text style={[styles.disciplineText, { color: theme.color.brandSecondary }]}>
+              🎉 Daily goal achieved. Consider stopping for today.
+            </Text>
+          </View>
+        )}
+        {goalSummary?.stats?.daily_loss_hit && (
+          <View style={[styles.disciplineBanner, { backgroundColor: theme.color.error + "22", borderColor: theme.color.error }]} testID="discipline-loss-hit">
+            <Text style={[styles.disciplineText, { color: theme.color.error }]}>
+              ⚠ Daily loss limit reached. Trading is not recommended.
+            </Text>
+          </View>
+        )}
+
+        <GoalCard summary={goalSummary} onPress={() => router.push("/goals")} />
+
         {/* Timeframe row */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tfRow}>
           {TIMEFRAMES.map((tf) => {
@@ -321,4 +345,8 @@ const styles = StyleSheet.create({
   missingDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: theme.color.warning },
   missingText: { color: theme.color.onSurface, fontSize: 12 },
   footer: { color: theme.color.onSurfaceSecondary, fontSize: 11, textAlign: "center", marginTop: 16 },
+  disciplineBanner: {
+    borderWidth: 1, borderRadius: 12, padding: 12,
+  },
+  disciplineText: { fontSize: 13, fontWeight: "700", textAlign: "center" },
 });
