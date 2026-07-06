@@ -1,0 +1,166 @@
+{
+  "app_name": "A+ Crypto Futures AI",
+  "personality": "7 Dark-First Utility DARK",
+  "personality_one_liner": "A high-performance, command-center interface optimizing for rapid scanning, metric hierarchy, and tactical decision-making with a premium crypto-native feel.",
+  "color": {
+    "surface": "#0B0E14",
+    "onSurface": "#E0E3EB",
+    "surfaceSecondary": "#131722",
+    "onSurfaceSecondary": "#A0A8B8",
+    "surfaceTertiary": "#1E222D",
+    "onSurfaceTertiary": "#C1C8D7",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#0B0E14",
+    "brand": "#00D9FF",
+    "brandPrimary": "#00D9FF",
+    "onBrandPrimary": "#002233",
+    "brandSecondary": "#00FF88",
+    "onBrandSecondary": "#00331A",
+    "brandTertiary": "#003344",
+    "onBrandTertiary": "#88E0FF",
+    "success": "#00FF88",
+    "onSuccess": "#00331A",
+    "warning": "#FFB800",
+    "onWarning": "#4D3800",
+    "error": "#FF3B30",
+    "onError": "#FFFFFF",
+    "info": "#00D9FF",
+    "onInfo": "#002233",
+    "border": "#2A2E39",
+    "borderStrong": "#363C4E",
+    "divider": "#2A2E39"
+  },
+  "typography": {
+    "displayFontFamily": "Rajdhani",
+    "textFontFamily": "IBM Plex Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use dense but organized spacing. Metrics must dominate the screen. Use dividers and tonal separation instead of heavy shadows.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 16,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glass on bottom tab bar to allow scrolling charts to bleed behind.",
+      "Use glass on pinned timeframe segmented controls/filters.",
+      "Use glass on AI trade alert modals or bottom sheets."
+    ],
+    "dont's": [
+      "Do not use glass on dense data rows, form fields, or standard trading metrics."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "Primary trading dashboard with live charts, timeframe selection, and instantaneous AI setup analysis.",
+      "states": {
+        "loading": "Skeleton loaders for the chart widget and pair header.",
+        "empty": "Illustration of an AI scanning a dark chart with prompt 'Select a pair to analyze setups.'",
+        "error": "Error message with 'Retry Connection' button."
+      },
+      "layout": "Sticky top header with Pair/Exchange selector. Pinned horizontal scroll for Timeframes (5m, 15m, 1H, etc.) using glassmorphism. Scrollable body: Live chart area taking up upper half. Below chart: Upload Screenshot section. Bottom: Large pinned 'Analyze' CTA button in thumb-zone. Upon analysis, an AI Report Card appears with A+/A/B/C badge, Entry/SL/TP metrics in condensed display font, and an expandable Checklist."
+    },
+    {
+      "name": "Watchlist",
+      "purpose": "Monitor active crypto pairs and their live AI-generated trade scores.",
+      "states": {
+        "loading": "List of shimmering placeholder rows.",
+        "empty": "Empty state graphic with 'No pairs added. Tap + to track.'",
+        "error": "Failed to fetch live prices error text."
+      },
+      "layout": "List view. Each row contains the Pair symbol, live price, 24h change, and a colored AI Score pill (e.g., green 'A+', yellow 'WAIT'). Use tonal separation and dividers between rows."
+    },
+    {
+      "name": "Alerts",
+      "purpose": "Create and manage smart conditions for trade alerts.",
+      "states": {
+        "loading": "Spinner centered.",
+        "empty": "Bell icon with 'No active alerts. Set your criteria.'",
+        "error": "Error message if push notifications are disabled."
+      },
+      "layout": "Toggle list for active alerts. Floating Action Button (FAB) to add a new alert. Creation flow uses a bottom sheet with form inputs for Pair, Metric (Confidence, Price), and Trigger Condition."
+    },
+    {
+      "name": "Journal",
+      "purpose": "Log, grade, and review past trades with screenshot attachments.",
+      "states": {
+        "loading": "Skeleton feed.",
+        "empty": "Wallet/Log icon with 'Your trading journal is empty. Log your first A+ trade.'",
+        "error": "Failed to load journal."
+      },
+      "layout": "Feed of past trades. Each card shows Pair, Trade Date, PnL metric, and AI Grade. Cards use surfaceSecondary with subtle borders. Includes a thumbnail slot for chart screenshots."
+    },
+    {
+      "name": "Tools",
+      "purpose": "Position size calculator and beginner-friendly education resources.",
+      "states": {
+        "loading": "Spinner.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Segmented control at the top: 'Calculator' | 'Education'. Calculator: Form with Account Balance, Risk %, Stop Loss %, with a sticky 'Calculate Position' CTA. Education: Accordion list of beginner explanations for Entry, RR, SL, TP."
+    }
+  ],
+  "haptics": {
+    "events": {
+      "analyze_button_press": "heavy",
+      "timeframe_toggle": "light",
+      "tab_change": "selection",
+      "alert_toggle": "medium",
+      "success_analysis": "notification_success"
+    }
+  },
+  "images": {
+    "home_chart_bg": {
+      "url": "https://images.pexels.com/photos/30268013/pexels-photo-30268013.jpeg",
+      "alt": "Dark crypto trading chart showing market fluctuations"
+    },
+    "neon_abstract_bg": {
+      "url": "https://images.pexels.com/photos/7120485/pexels-photo-7120485.png",
+      "alt": "Abstract dynamic neon blue and pink light reflections"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Adhere strictly to the '7 Dark-First Utility DARK' personality. Do not use heavy shadows; rely on dividers (1px border) and tonal contrast (surface vs surfaceSecondary).",
+    "The user explicitly requested 'neon blue #00D9FF' and 'neon green #00FF88' accents. This is legally permitted per the prompt's exception rule because the user literally typed the colors and it fits the Web3/Crypto domain.",
+    "Implement the TradingView-inspired 'Thumb-Zone Architecture': Pin critical actions like the 'Analyze Setup' button at the bottom of the screen above the safe area, avoiding the need for users to reach up.",
+    "Use 'Rajdhani' for all display numbers, metrics, prices, and high-impact headings to reinforce the technical command-center feel. Use 'IBM Plex Sans' for body text and labels.",
+    "Apply 'gradient-to-dark scrims' if rendering any text on top of the provided background images, enforcing >=70% opacity at the bottom stop.",
+    "For the AI Analysis Report Card, if confidence is < 85%, forcefully display 'WAIT - No A+ setup found' in warning color (#FFB800) instead of rendering trade parameters. Do not recommend trades below an A grade.",
+    "Ensure 'Rounded cards' are implemented using the 'md' (12px) or 'lg' (16px) radius tokens, overriding the typical sharp brutalist edges of pure utility apps, as requested by the user."
+  ]
+}
