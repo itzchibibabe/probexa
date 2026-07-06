@@ -36,13 +36,35 @@ Emergent Google login. Brand "Probexa" + tagline "Only High-Probability Setups."
 - 60s server-side cache
 
 ### Analyze detail `/analyze/[symbol]`
-Minimal card only. NO reason/education/prose text. Shows:
-- Trend, Support, Resistance
-- Entry, Stop Loss, Take Profit 1/2/3
-- Risk : Reward
-- AI Score, Trade Grade, Status (BUY/SELL/WAIT), Confidence%
+Minimal card only. Displays exactly:
+- Trend, Market Structure, Support, Resistance
+- Entry, Stop Loss, Take Profit 1, Take Profit 2
+- Risk : Reward, Score /100, Confidence %, Trade Grade
+- Status pill (BUY / SELL / WAIT)
+- **Live Checklist** (6 items with ✓/✗): Trend Confirmed, EMA Alignment, Support Holding, Volume Confirmation, Breakout Confirmed, Retest Complete
+- **"Open Smart Position Calculator"** button (pre-fills entry/SL/TP in Tools tab)
 - Embedded TradingView chart (BINANCE prefix)
 - Watchlist toggle
+
+### Goal Dashboard `/goals`
+Set: Current/Target Balance, Daily/Weekly/Monthly Profit Goals, Max Daily/Weekly Loss.
+Displays: Balance card with progress bar, per-goal rows with progress %, performance grid (Win Rate, Total Trades, Consec Wins, Consec Losses).
+Discipline banners:
+- `🎉 Daily goal achieved. Consider stopping for today.` when daily_goal_hit
+- `⚠ Daily loss limit reached. Trading is not recommended.` when daily_loss_hit
+Log Trade Result: symbol + BUY/SELL + PnL → auto-updates balance and stats.
+
+### Tools tab (Smart Position Calculator)
+User enters: Wallet Balance, Risk %, Leverage.
+Trade setup (Entry/SL/TP1/TP2/TP3) auto-fills from analyze detail via URL params.
+Instantly computes:
+- Recommended Margin
+- Position Size (units)
+- Position Notional
+- Maximum Loss
+- Expected Profit (TP1)
+- Profits at TP2 / TP3
+- Risk : Reward
 
 ### Watchlist tab
 Add/remove pairs; live prices + 24h change.
@@ -59,12 +81,15 @@ History of saved analyses (from LLM `/analyze` when used).
 
 ## Backend Endpoints
 - `GET /api/scan?timeframe=1h` — rule-based scan of top 20 pairs
-- `GET /api/setup/{symbol}?timeframe=1h` — single-pair setup
+- `GET /api/setup/{symbol}?timeframe=1h` — single-pair setup w/ 6-item checklist
 - `GET /api/market/pairs|ticker|tickers|klines|funding|open-interest`
 - `POST /api/analyze` (LLM, optional) + `/api/analyze/screenshot`
 - `POST /api/auth/session`, `GET /api/auth/me`, `POST /api/auth/logout`
 - CRUD `/api/watchlist`, `/api/alerts`, `GET /api/journal`
 - `POST /api/calculator`, `POST /api/register-push`
+- **`GET/PUT /api/goals`** — user goal settings
+- **`GET /api/goals/summary`** — computed stats + progress %
+- **`GET/POST /api/trades`, `DELETE /api/trades/{id}`** — trade log
 
 ## Integrations
 - **Emergent Google Login** (session token 7d)
