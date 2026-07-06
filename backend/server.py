@@ -15,6 +15,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 
 from indicators import compute_snapshot
+from scan_engine import build_setup, DEFAULT_UNIVERSE
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -271,6 +272,82 @@ async def market_open_interest(symbol: str):
     except Exception:
         pass
     return {"open_interest": 0.0}
+
+
+# =====================================================
+# MARKET SCAN — rule-based, no LLM
+# =====================================================
+import asyncio as _asyncio
+import time as _time
+
+_scan_cache: Dict[str, Any] = {}
+_SCAN_TTL = 60  # seconds
+
+
+async def _fetch_one_setup(symbol: str, timeframe: str):
+    try:
+        klines = await _fetch_klines(symbol, timeframe, 250)
+        setup = build_setup(symbol, klines)
+        return setup
+    except Exception as e:
+        logger.debug("scan pair %s failed: %s", symbol, e)
+        return None
+
+
+@api.get("/scan")
+async def scan_markets(timeframe: str = "1h", limit: int = 20):
+    key = f"{timeframe}:{limit}"
+    now = _time.time()
+    cached = _scan_cache.get(key)
+    if cached and (now - cached["at"] < _SCAN_TTL):
+        return cached["data"]
+
+    universe = DEFAULT_UNIVERSE[:limit]
+    tasks = [_fetch_one_setup(s, timeframe) for s in universe]
+    setups = await _asyncio.gather(*tasks)
+    setups = [s for s in setups if s]
+
+    best_setups = sorted(
+        [s for s in setups if s["ai_score"] >= 80 and s["action"] in ("BUY", "SELL")],
+        key=lambda x: (x["ai_score"], x["confidence"]),
+        reverse=True,
+    )[:8]
+
+    preparing = sorted(
+        [s for s in setups if 65 <= s["ai_score"] < 90 and s["direction"] != "neutral"],
+        key=lambda x: x["ai_score"],
+        reverse=True,
+    )[:8]
+    # Exclude items already in best_setups
+    best_syms = {s["symbol"] for s in best_setups}
+    preparing = [p for p in preparing if p["symbol"] not in best_syms][:6]
+
+    # Sanitize snapshots (drop heavy fields) to reduce payload
+    def strip(s):
+        s = dict(s)
+        s.pop("snapshot", None)
+        return s
+
+    data = {
+        "timeframe": timeframe,
+        "best_setups": [strip(s) for s in best_setups],
+        "preparing": [strip(s) for s in preparing],
+        "scanned_count": len(setups),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _scan_cache[key] = {"at": now, "data": data}
+    return data
+
+
+@api.get("/setup/{symbol}")
+async def get_setup(symbol: str, timeframe: str = "1h"):
+    """Compute a full setup for a single symbol (rule-based, no LLM)."""
+    klines = await _fetch_klines(symbol.upper(), timeframe, 250)
+    setup = build_setup(symbol.upper(), klines)
+    if not setup:
+        raise HTTPException(400, "Not enough data")
+    setup.pop("snapshot", None)
+    return setup
 
 
 # =====================================================

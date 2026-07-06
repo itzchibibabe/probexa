@@ -39,6 +39,9 @@ export const api = {
   tickers: (symbols: string[]) =>
     request<{ tickers: any[] }>(`/market/tickers?symbols=${symbols.join(",")}`, {}, false),
 
+  scan: (timeframe: string) => request<any>(`/scan?timeframe=${timeframe}`, {}, false),
+  setup: (symbol: string, timeframe: string) => request<any>(`/setup/${symbol}?timeframe=${timeframe}`, {}, false),
+
   analyze: (symbol: string, exchange: string, timeframe: string) =>
     request("/analyze", { method: "POST", body: JSON.stringify({ symbol, exchange, timeframe }) }),
   analyzeScreenshot: (image_base64: string, symbol?: string, notes?: string) =>

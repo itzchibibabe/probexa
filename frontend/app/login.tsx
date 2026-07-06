@@ -31,15 +31,15 @@ export default function LoginScreen() {
         <View style={styles.logoRing}>
           <Ionicons name="trending-up" size={44} color={theme.color.brand} />
         </View>
-        <Text style={styles.brand}>A+ Crypto Futures AI</Text>
-        <Text style={styles.tag}>A+ setups only. Never guess. Capital first.</Text>
+        <Text style={styles.brand}>Probexa</Text>
+        <Text style={styles.tag}>Only High-Probability Setups.</Text>
       </View>
 
       <View style={styles.middle}>
         {[
-          { icon: "flash-outline", txt: "Live OKX futures data" },
-          { icon: "analytics-outline", txt: "AI-graded A+ trade setups" },
-          { icon: "shield-checkmark-outline", txt: "Beginner-friendly explanations" },
+          { icon: "flash-outline", txt: "Auto-scans live futures markets" },
+          { icon: "analytics-outline", txt: "A+ / A / B / C trade grading" },
+          { icon: "shield-checkmark-outline", txt: "Never forces a trade — WAIT is a signal" },
         ].map((f) => (
           <View key={f.icon} style={styles.feature}>
             <Ionicons name={f.icon as any} size={20} color={theme.color.brand} />
