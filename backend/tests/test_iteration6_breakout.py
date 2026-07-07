@@ -111,7 +111,9 @@ def _check_iter5(s, ctx):
     if eql != _expected_quality_label(eqs):
         fails.append(f"{ctx}: eql={eql} eqs={eqs}")
 
-    entry = s["entry"]; sl = s["stop_loss"]; tp1 = s["take_profit_1"]
+    entry = s["entry"]
+    sl = s["stop_loss"]
+    tp1 = s["take_profit_1"]
     if direction == "long" and not (sl < entry < tp1):
         fails.append(f"{ctx}: long ord sl={sl} entry={entry} tp1={tp1}")
     if direction == "short" and not (sl > entry > tp1):

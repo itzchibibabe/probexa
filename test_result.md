@@ -221,7 +221,34 @@ backend:
         agent: "testing"
         comment: "Iteration 5: WAIT⇒grade∈{B,C}&conf≤82, level ordering (long/short) always correct."
 
+  - task: "Intelligent Breakout Confirmation (multi-factor)"
+    implemented: true
+    working: true
+    file: "/app/backend/indicators.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New breakout_confirmation() analyzer replaces the naive `price > level` check. Requires ALL of: body close beyond level (wicks never count), volume > 1.2× recent avg, momentum body ≥55% of range AND ≥50% ATR, structure HH-HL/LH-LL, post-breakout acceptance, HTF alignment (real HTF snap or ema200-slope fallback). Retest held is a bonus (not required). Returns {confirmed, reason, criteria, retest_held}."
+      - working: true
+        agent: "testing"
+        comment: "Iteration 6: 19/19 pytest PASS on live OKX data. 44 setups across scans + 4 named symbols verify invariants (A)-(I). A+ contract exercised non-vacuously on ATUSDT SELL (all 6 criteria True + display_checklist all True + conf=92). Calibration 3/22 confirmed (~14%) — strict but not vacuous."
+
 frontend:
+  - task: "TradeCard renders checklist reason (Breakout)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/TradeCard.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Verified via /analyze/PENDLEUSDT screenshot: Breakout Confirmed shows unchecked with dimmed sub-text '· No candle body has closed above the key level yet'. GOOGLUSDT shows '· volume below recent average'. Clean plain-English trader reasoning."
+
   - task: "TradeCard renders auto_rr and entry_quality"
     implemented: true
     working: true
