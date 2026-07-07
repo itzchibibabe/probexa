@@ -67,6 +67,14 @@ export default function AnalyzeSymbol() {
     return { ...rawSetup, take_profit_1: tp1, take_profit_2: tp2, risk_reward: rr };
   }, [rawSetup, rr]);
 
+  // RR validation warning — TP1 exceeds nearest major S/R
+  const rrWarning = useMemo(() => {
+    if (!setup) return false;
+    if (setup.direction === "long" && setup.take_profit_1 > setup.resistance * 1.005) return true;
+    if (setup.direction === "short" && setup.take_profit_1 < setup.support * 0.995) return true;
+    return false;
+  }, [setup]);
+
   const toggleLevel = (key: string, _price: number) => {
     setActiveLevels((prev) => {
       const n = new Set(prev);
