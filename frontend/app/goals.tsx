@@ -8,9 +8,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { theme } from "@/src/theme";
 import { api } from "@/src/api";
+import { useUserPrefs } from "@/src/UserPrefsContext";
 
 export default function GoalDashboard() {
   const router = useRouter();
+  const { formatMoney } = useUserPrefs();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [summary, setSummary] = useState<any>(null);
@@ -115,15 +117,15 @@ export default function GoalDashboard() {
         {/* Balance card */}
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Current Balance</Text>
-          <Text style={styles.balanceValue}>${fmtMoney(s.current_balance || 0)}</Text>
+          <Text style={styles.balanceValue}>{formatMoney(s.current_balance || 0)}</Text>
           <View style={styles.balanceRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.balSub}>Target</Text>
-              <Text style={styles.balSubVal}>${fmtMoney(s.target_balance || 0)}</Text>
+              <Text style={styles.balSubVal}>{formatMoney(s.target_balance || 0)}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.balSub}>Remaining</Text>
-              <Text style={[styles.balSubVal, { color: theme.color.brand }]}>${fmtMoney(s.remaining_to_goal || 0)}</Text>
+              <Text style={[styles.balSubVal, { color: theme.color.brand }]}>{formatMoney(s.remaining_to_goal || 0)}</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.balSub}>Progress</Text>
@@ -137,39 +139,39 @@ export default function GoalDashboard() {
         <SectionTitle text="Profit Goals" />
         <GoalRow
           label="Today's P&L"
-          value={`${(s.today_pnl || 0) >= 0 ? "+" : ""}$${fmtMoney(Math.abs(s.today_pnl || 0))}`}
+          value={formatMoney(s.today_pnl || 0, { showSign: true })}
           progress={s.daily_progress_pct || 0}
-          target={`$${fmtMoney(g.daily_profit_goal || 0)}`}
+          target={formatMoney(g.daily_profit_goal || 0)}
           color={(s.today_pnl || 0) >= 0 ? theme.color.brandSecondary : theme.color.error}
         />
         <GoalRow
           label="This Week"
-          value={`${(s.week_pnl || 0) >= 0 ? "+" : ""}$${fmtMoney(Math.abs(s.week_pnl || 0))}`}
+          value={formatMoney(s.week_pnl || 0, { showSign: true })}
           progress={s.weekly_progress_pct || 0}
-          target={`$${fmtMoney(g.weekly_profit_goal || 0)}`}
+          target={formatMoney(g.weekly_profit_goal || 0)}
           color={(s.week_pnl || 0) >= 0 ? theme.color.brandSecondary : theme.color.error}
         />
         <GoalRow
           label="This Month"
-          value={`${(s.month_pnl || 0) >= 0 ? "+" : ""}$${fmtMoney(Math.abs(s.month_pnl || 0))}`}
+          value={formatMoney(s.month_pnl || 0, { showSign: true })}
           progress={s.monthly_progress_pct || 0}
-          target={`$${fmtMoney(g.monthly_profit_goal || 0)}`}
+          target={formatMoney(g.monthly_profit_goal || 0)}
           color={(s.month_pnl || 0) >= 0 ? theme.color.brandSecondary : theme.color.error}
         />
 
         <SectionTitle text="Risk Limits" />
         <GoalRow
           label="Daily Loss Limit"
-          value={`$${fmtMoney(Math.max(0, -(s.today_pnl || 0)))}`}
+          value={formatMoney(Math.max(0, -(s.today_pnl || 0)))}
           progress={s.daily_loss_pct || 0}
-          target={`$${fmtMoney(g.max_daily_loss || 0)}`}
+          target={formatMoney(g.max_daily_loss || 0)}
           color={theme.color.error}
         />
         <GoalRow
           label="Weekly Loss Limit"
-          value={`$${fmtMoney(Math.max(0, -(s.week_pnl || 0)))}`}
+          value={formatMoney(Math.max(0, -(s.week_pnl || 0)))}
           progress={s.weekly_loss_pct || 0}
-          target={`$${fmtMoney(g.max_weekly_loss || 0)}`}
+          target={formatMoney(g.max_weekly_loss || 0)}
           color={theme.color.error}
         />
 

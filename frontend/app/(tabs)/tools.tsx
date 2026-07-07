@@ -4,16 +4,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { theme } from "@/src/theme";
-import { api } from "@/src/api";
+import { useUserPrefs } from "@/src/UserPrefsContext";
 
 /**
  * Smart Position Calculator.
- *
- * User enters: Wallet Balance, Risk %, Leverage.
- * Trade setup (Entry, Stop Loss, Take Profit) can be pre-filled from URL params (from analyze detail).
- * Auto-computes: Recommended Margin, Position Size, Max Loss, Expected Profit, Risk:Reward.
  */
 export default function Tools() {
+  const { formatMoney } = useUserPrefs();
   const params = useLocalSearchParams<{
     symbol?: string; entry?: string; sl?: string;
     tp1?: string; tp2?: string; tp3?: string;
@@ -105,16 +102,16 @@ export default function Tools() {
           <SectionHeader label="Result" />
           {calc ? (
             <View style={styles.result} testID="calc-result">
-              <ResultRow k="Recommended Margin" v={`$${calc.margin}`} accent={theme.color.brand} highlight />
+              <ResultRow k="Recommended Margin" v={formatMoney(calc.margin)} accent={theme.color.brand} highlight />
               <ResultRow k="Position Size (units)" v={calc.units.toString()} />
-              <ResultRow k="Position Notional" v={`$${calc.notional}`} />
-              <ResultRow k="Maximum Loss" v={`$${calc.maxLoss}`} accent={theme.color.error} highlight />
-              {calc.expected != null && <ResultRow k="Expected Profit (TP1)" v={`$${calc.expected}`} accent={theme.color.brandSecondary} highlight />}
+              <ResultRow k="Position Notional" v={formatMoney(calc.notional)} />
+              <ResultRow k="Maximum Loss" v={formatMoney(calc.maxLoss)} accent={theme.color.error} highlight />
+              {calc.expected != null && <ResultRow k="Expected Profit (TP1)" v={formatMoney(calc.expected)} accent={theme.color.brandSecondary} highlight />}
               <ResultRow k="Risk : Reward" v={calc.rr ? `1 : ${calc.rr}` : "-"} />
 
               {(calc.profit2 != null || calc.profit3 != null) && <View style={styles.divider} />}
-              {calc.profit2 != null && <ResultRow k="Profit at TP2" v={`$${calc.profit2}`} accent={theme.color.brandSecondary} />}
-              {calc.profit3 != null && <ResultRow k="Profit at TP3" v={`$${calc.profit3}`} accent={theme.color.brandSecondary} />}
+              {calc.profit2 != null && <ResultRow k="Profit at TP2" v={formatMoney(calc.profit2)} accent={theme.color.brandSecondary} />}
+              {calc.profit3 != null && <ResultRow k="Profit at TP3" v={formatMoney(calc.profit3)} accent={theme.color.brandSecondary} />}
             </View>
           ) : (
             <View style={styles.emptyResult}>

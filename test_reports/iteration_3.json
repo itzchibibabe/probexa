@@ -1,0 +1,36 @@
+{
+  "summary": "Backend-only tests for 3rd iteration new endpoints: GET /api/currency/rates and GET/PUT /api/prefs. Created /app/backend/tests/test_prefs_currency.py with 9 targeted tests. Result: 9/9 PASSED. Currency rates endpoint returns live data from open.er-api.com (base=USD, USD=1, INR/EUR/GBP within expected ranges), source field correct, and second call is cache-served (<2s, identical payload). Prefs endpoint: unauthed GET returns 401, authed GET returns full shape with all 5 notification keys as booleans, PUT updates display_name+currency without affecting notifications, partial notification toggles merge correctly leaving other 3 defaults intact, empty PUT is idempotent, and PUT trims display_name whitespace + uppercases currency as expected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_prefs_currency.py",
+    "/app/test_reports/pytest/prefs_currency_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~983 lines — exceeds the 700-line soft limit. Recommend splitting into routers (routes/prefs.py, routes/currency.py, routes/goals.py, routes/market.py) for maintainability.",
+    "put_prefs at server.py:915-927 calls await get_prefs(user) which internally executes a second DB find_one — fine, but could return the merged dict directly to save a round-trip.",
+    "Currency rates cache (_rate_cache) is process-local; on multi-worker deploys each worker will fetch independently. Acceptable for a 12h TTL but worth noting.",
+    "In put_prefs, empty string display_name (e.g. '   ') is accepted and stored as '' after strip — no validation that it must be non-empty. Not a bug per spec, but consider a min length check if UI expects a name."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_prefs_currency.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "Tests idempotently mutate user_test001's prefs (Vishwa/INR + notification toggles). No cleanup needed; tests are order-tolerant and set values before asserting.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New endpoints covered: GET /api/currency/rates (public, 12h cache, USD base, open.er-api.com upstream with fallback), GET/PUT /api/prefs (auth-required, PrefsBody has optional display_name/currency/notifications, PUT merges partial notification updates over defaults, trims name, uppercases currency). Notification schema has exactly 5 keys: a_plus_ready, watchlist, daily_goal_achieved, daily_loss_reached, daily_summary (all bool). Iterations 1 & 2 covered auth/market/scan/analyze/watchlist/alerts/journal/goals/trades/calculator/push. Bearer token: test-token-abc-123 for user_test001.",
+  "rca_of_issue": "N/A — no failures observed. All 9 tests passed on first run."
+}

@@ -2,8 +2,10 @@ import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "@/src/theme";
+import { useUserPrefs } from "@/src/UserPrefsContext";
 
 export function GoalCard({ summary, onPress }: { summary: any; onPress: () => void }) {
+  const { formatMoney } = useUserPrefs();
   const stats = summary?.stats;
   const goals = summary?.goals;
   const hasGoals = goals && (goals.target_balance > 0 || goals.current_balance > 0);
@@ -33,7 +35,7 @@ export function GoalCard({ summary, onPress }: { summary: any; onPress: () => vo
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Goal Tracker</Text>
           <Text style={styles.subtitle}>
-            ${fmtMoney(stats.current_balance)} / ${fmtMoney(stats.target_balance)}
+            {formatMoney(stats.current_balance)} / {formatMoney(stats.target_balance)}
           </Text>
         </View>
         <View style={styles.pctBadge}>
@@ -46,7 +48,7 @@ export function GoalCard({ summary, onPress }: { summary: any; onPress: () => vo
       </View>
 
       <View style={styles.stats}>
-        <Stat k="Today" v={`${todayPnl >= 0 ? "+" : ""}$${fmtMoney(Math.abs(todayPnl))}`} accent={pnlColor} />
+        <Stat k="Today" v={formatMoney(todayPnl, { showSign: true })} accent={pnlColor} />
         <Stat k="Win Rate" v={`${stats.win_rate || 0}%`} accent={theme.color.brand} />
         <Stat k="Trades" v={String(stats.total_trades || 0)} accent={theme.color.onSurface} />
       </View>
@@ -61,12 +63,6 @@ function Stat({ k, v, accent }: any) {
       <Text style={[styles.statV, { color: accent }]} numberOfLines={1}>{v}</Text>
     </View>
   );
-}
-
-function fmtMoney(n: number) {
-  const num = Number(n) || 0;
-  if (num >= 1000) return num.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  return num.toFixed(2);
 }
 
 const styles = StyleSheet.create({
@@ -96,9 +92,7 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
   },
   pctText: { color: theme.color.brand, fontSize: 14, fontWeight: "800" },
-  bar: {
-    height: 6, borderRadius: 3, backgroundColor: theme.color.surfaceTertiary, overflow: "hidden",
-  },
+  bar: { height: 6, borderRadius: 3, backgroundColor: theme.color.surfaceTertiary, overflow: "hidden" },
   barFill: { height: "100%", backgroundColor: theme.color.brandSecondary },
   stats: { flexDirection: "row", gap: 12 },
   statK: { color: theme.color.onSurfaceSecondary, fontSize: 10, textTransform: "uppercase", letterSpacing: 1 },

@@ -10,6 +10,7 @@ import * as Haptics from "expo-haptics";
 import { theme, gradeColor, actionColor } from "@/src/theme";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/AuthContext";
+import { useUserPrefs } from "@/src/UserPrefsContext";
 import { GoalCard } from "@/src/GoalCard";
 
 const TIMEFRAMES = ["15m", "30m", "1h", "4h", "1d"];
@@ -17,6 +18,7 @@ const TIMEFRAMES = ["15m", "30m", "1h", "4h", "1d"];
 export default function Home() {
   const router = useRouter();
   const { user, signOut } = useAuth();
+  const { prefs, formatMoney } = useUserPrefs();
   const [timeframe, setTimeframe] = useState("1h");
   const [data, setData] = useState<any>(null);
   const [goalSummary, setGoalSummary] = useState<any>(null);
@@ -62,15 +64,15 @@ export default function Home() {
     <SafeAreaView edges={["top"]} style={styles.root} testID="home-screen">
       <View style={styles.headerRow}>
         <View>
-          <Text style={styles.brand}>Probexa</Text>
+          <Text style={styles.brand}>{greeting()}{prefs.display_name ? `, ${prefs.display_name}` : ""} 👋</Text>
           <Text style={styles.tag}>Only High-Probability Setups.</Text>
         </View>
         <View style={{ flexDirection: "row", gap: 4 }}>
           <Pressable testID="home-search-btn" onPress={openSearch} style={styles.iconBtn}>
             <Ionicons name="search" size={22} color={theme.color.brand} />
           </Pressable>
-          <Pressable testID="signout-button" onPress={signOut} style={styles.iconBtn}>
-            <Ionicons name="log-out-outline" size={22} color={theme.color.onSurfaceSecondary} />
+          <Pressable testID="home-settings-btn" onPress={() => router.push("/settings")} style={styles.iconBtn}>
+            <Ionicons name="settings-outline" size={22} color={theme.color.onSurfaceSecondary} />
           </Pressable>
         </View>
       </View>
@@ -181,6 +183,13 @@ function SectionHeader({ icon, title, caption }: any) {
       <Text style={styles.sectionCaption}>{caption}</Text>
     </View>
   );
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
 }
 
 function BestSetupCard({ setup, onPress }: any) {

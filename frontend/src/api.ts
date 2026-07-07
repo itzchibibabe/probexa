@@ -69,6 +69,10 @@ export const api = {
   logTrade: (payload: any) => request("/trades", { method: "POST", body: JSON.stringify(payload) }),
   delTrade: (id: string) => request(`/trades/${id}`, { method: "DELETE" }),
 
+  prefs: () => request<any>("/prefs"),
+  savePrefs: (payload: any) => request("/prefs", { method: "PUT", body: JSON.stringify(payload) }),
+  currencyRates: () => request<any>("/currency/rates", {}, false),
+
   calculator: (payload: any) =>
     request("/calculator", { method: "POST", body: JSON.stringify(payload) }, false),
 

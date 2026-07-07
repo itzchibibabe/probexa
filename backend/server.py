@@ -879,9 +879,97 @@ async def send_push(recipients: List[str], data: dict, idempotency_key: Optional
         logger.warning("Push send failed (non-blocking): %s", e)
 
 
+# =====================================================
+# USER PREFERENCES — name, currency, notification prefs
+# =====================================================
+class PrefsBody(BaseModel):
+    display_name: Optional[str] = None
+    currency: Optional[str] = None
+    notifications: Optional[Dict[str, bool]] = None
+
+
+DEFAULT_PREFS = {
+    "display_name": "",
+    "currency": "USD",
+    "notifications": {
+        "a_plus_ready": True,
+        "watchlist": True,
+        "daily_goal_achieved": True,
+        "daily_loss_reached": True,
+        "daily_summary": False,
+    },
+}
+
+
+@api.get("/prefs")
+async def get_prefs(user: dict = Depends(require_user)):
+    doc = await db.user_prefs.find_one({"user_id": user["user_id"]}, {"_id": 0}) or {}
+    prefs = {
+        "display_name": doc.get("display_name", user.get("name", "")),
+        "currency": doc.get("currency", DEFAULT_PREFS["currency"]),
+        "notifications": {**DEFAULT_PREFS["notifications"], **(doc.get("notifications") or {})},
+    }
+    return prefs
+
+
+@api.put("/prefs")
+async def put_prefs(body: PrefsBody, user: dict = Depends(require_user)):
+    update: Dict[str, Any] = {"user_id": user["user_id"], "updated_at": datetime.now(timezone.utc)}
+    if body.display_name is not None:
+        update["display_name"] = body.display_name.strip()
+    if body.currency is not None:
+        update["currency"] = body.currency.upper().strip()
+    if body.notifications is not None:
+        current = await db.user_prefs.find_one({"user_id": user["user_id"]}, {"_id": 0}) or {}
+        merged = {**DEFAULT_PREFS["notifications"], **(current.get("notifications") or {}), **body.notifications}
+        update["notifications"] = merged
+    await db.user_prefs.update_one({"user_id": user["user_id"]}, {"$set": update}, upsert=True)
+    return await get_prefs(user)
+
+
 @api.get("/")
 async def root():
     return {"app": "Probexa", "ok": True}
+
+
+# =====================================================
+# CURRENCY RATES — USD base, cached 12h
+# =====================================================
+_rate_cache: Dict[str, Any] = {"data": None, "at": 0}
+_RATE_TTL = 12 * 3600
+
+
+@api.get("/currency/rates")
+async def currency_rates():
+    now = _time.time()
+    cached = _rate_cache.get("data")
+    if cached and (now - _rate_cache["at"] < _RATE_TTL):
+        return cached
+    try:
+        r = await http.get("https://open.er-api.com/v6/latest/USD", timeout=10.0)
+        if r.status_code == 200:
+            d = r.json()
+            if d.get("result") == "success":
+                data = {
+                    "base": "USD",
+                    "rates": d.get("rates", {}),
+                    "updated_at": d.get("time_last_update_utc"),
+                    "source": "open.er-api.com",
+                }
+                _rate_cache["data"] = data
+                _rate_cache["at"] = now
+                return data
+    except Exception as e:
+        logger.warning("Rate fetch failed: %s", e)
+    # Serve stale cache if present, else USD-only fallback
+    if cached:
+        return cached
+    return {
+        "base": "USD",
+        "rates": {"USD": 1.0},
+        "updated_at": None,
+        "source": "fallback",
+    }
 
 
 app.include_router(api)

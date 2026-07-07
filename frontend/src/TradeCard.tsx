@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme, gradeColor, actionColor } from "@/src/theme";
 
@@ -13,6 +13,7 @@ type Setup = {
   stop_loss: number;
   take_profit_1: number;
   take_profit_2: number;
+  take_profit_3?: number;
   risk_reward: number;
   ai_score: number;
   trade_grade: string;
@@ -31,10 +32,25 @@ const CHECKLIST_KEYS = [
   "Retest Complete",
 ];
 
-export function TradeCard({ setup, timeframe }: { setup: Setup; timeframe?: string }) {
+/** These are the ONLY cards that get an eye toggle. */
+const TOGGLEABLE = new Set(["Support", "Resistance", "Entry", "Stop Loss", "Take Profit 1", "Take Profit 2"]);
+
+const RR_OPTIONS = [1.5, 2, 2.5, 3];
+
+type Props = {
+  setup: Setup;
+  timeframe?: string;
+  activeLevels?: Set<string>;
+  onToggleLevel?: (key: string, price: number) => void;
+  rr?: number;
+  onChangeRR?: (rr: number) => void;
+};
+
+export function TradeCard({ setup, timeframe, activeLevels, onToggleLevel, rr, onChangeRR }: Props) {
   const isWait = setup.action === "WAIT" || setup.confidence < 85;
   const cl = setup.display_checklist || {};
   const allTrue = CHECKLIST_KEYS.every((k) => cl[k]);
+  const currentRR = rr ?? (setup.risk_reward || 2);
 
   return (
     <View style={styles.card} testID="trade-card">
@@ -77,21 +93,40 @@ export function TradeCard({ setup, timeframe }: { setup: Setup; timeframe?: stri
 
       {/* Metric grid */}
       <View style={styles.grid}>
-        <Kv k="Trend" v={cap(setup.trend)} />
-        <Kv k="Market Structure" v={setup.market_structure || "-"} />
-        <Kv k="Support" v={fmt(setup.support)} />
+        <Kv label="Trend" value={cap(setup.trend)} />
+        <Kv label="Market Structure" value={setup.market_structure || "-"} />
+        <Kv label="Support" value={fmt(setup.support)} price={setup.support} active={activeLevels?.has("Support")} onToggle={onToggleLevel} />
 
-        <Kv k="Resistance" v={fmt(setup.resistance)} />
-        <Kv k="Entry" v={fmt(setup.entry)} accent={theme.color.brand} />
-        <Kv k="Stop Loss" v={fmt(setup.stop_loss)} accent={theme.color.error} />
+        <Kv label="Resistance" value={fmt(setup.resistance)} price={setup.resistance} active={activeLevels?.has("Resistance")} onToggle={onToggleLevel} />
+        <Kv label="Entry" value={fmt(setup.entry)} accent={theme.color.brand} price={setup.entry} active={activeLevels?.has("Entry")} onToggle={onToggleLevel} />
+        <Kv label="Stop Loss" value={fmt(setup.stop_loss)} accent={theme.color.error} price={setup.stop_loss} active={activeLevels?.has("Stop Loss")} onToggle={onToggleLevel} />
 
-        <Kv k="Take Profit 1" v={fmt(setup.take_profit_1)} accent={theme.color.brandSecondary} />
-        <Kv k="Take Profit 2" v={fmt(setup.take_profit_2)} accent={theme.color.brandSecondary} />
-        <Kv k="Risk : Reward" v={setup.risk_reward ? `1 : ${Number(setup.risk_reward).toFixed(2)}` : "-"} />
+        <Kv label="Take Profit 1" value={fmt(setup.take_profit_1)} accent={theme.color.brandSecondary} price={setup.take_profit_1} active={activeLevels?.has("Take Profit 1")} onToggle={onToggleLevel} />
+        <Kv label="Take Profit 2" value={fmt(setup.take_profit_2)} accent={theme.color.brandSecondary} price={setup.take_profit_2} active={activeLevels?.has("Take Profit 2")} onToggle={onToggleLevel} />
 
-        <Kv k="Score" v={`${setup.ai_score}/100`} accent={theme.color.brand} />
-        <Kv k="Confidence" v={`${setup.confidence}%`} accent={actionColor(setup.action)} />
-        <Kv k="Grade" v={setup.trade_grade} accent={gradeColor(setup.trade_grade)} />
+        {/* Risk : Reward dropdown */}
+        <View style={styles.rrCell}>
+          <Text style={styles.kvKey}>Risk : Reward</Text>
+          <View style={styles.rrRow}>
+            {RR_OPTIONS.map((r) => {
+              const active = Math.abs(currentRR - r) < 0.05;
+              return (
+                <Pressable
+                  key={r}
+                  testID={`rr-${r}`}
+                  onPress={() => onChangeRR?.(r)}
+                  style={[styles.rrChip, active && styles.rrChipActive]}
+                >
+                  <Text style={[styles.rrChipText, active && styles.rrChipTextActive]}>1:{r}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <Kv label="Score" value={`${setup.ai_score}/100`} accent={theme.color.brand} />
+        <Kv label="Confidence" value={`${setup.confidence}%`} accent={actionColor(setup.action)} />
+        <Kv label="Grade" value={setup.trade_grade} accent={gradeColor(setup.trade_grade)} />
       </View>
 
       {/* Live checklist */}
@@ -117,11 +152,32 @@ export function TradeCard({ setup, timeframe }: { setup: Setup; timeframe?: stri
   );
 }
 
-function Kv({ k, v, accent }: { k: string; v: any; accent?: string }) {
+function Kv({ label, value, accent, price, active, onToggle }: {
+  label: string; value: any; accent?: string;
+  price?: number; active?: boolean; onToggle?: (key: string, price: number) => void;
+}) {
+  const canToggle = TOGGLEABLE.has(label) && onToggle && price !== undefined;
+  const activeStyle = canToggle && active ? styles.kvActive : null;
   return (
-    <View style={styles.kv}>
-      <Text style={styles.kvKey}>{k}</Text>
-      <Text style={[styles.kvVal, accent ? { color: accent } : null]} numberOfLines={1}>{v ?? "-"}</Text>
+    <View style={[styles.kv, activeStyle]} testID={`kv-${label}`}>
+      <View style={styles.kvHead}>
+        <Text style={styles.kvKey} numberOfLines={1}>{label}</Text>
+        {canToggle ? (
+          <Pressable
+            testID={`eye-${label}`}
+            onPress={() => onToggle!(label, price as number)}
+            hitSlop={8}
+            style={styles.eyeBtn}
+          >
+            <Ionicons
+              name={active ? "eye" : "eye-outline"}
+              size={14}
+              color={active ? theme.color.brand : theme.color.onSurfaceSecondary}
+            />
+          </Pressable>
+        ) : null}
+      </View>
+      <Text style={[styles.kvVal, accent ? { color: accent } : null]} numberOfLines={1}>{value ?? "-"}</Text>
     </View>
   );
 }
@@ -171,10 +227,30 @@ const styles = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   kv: {
     width: "31.5%", backgroundColor: theme.color.surfaceTertiary,
-    borderRadius: 10, padding: 10, gap: 2,
+    borderRadius: 10, padding: 10, gap: 4,
+    borderWidth: 1, borderColor: "transparent",
   },
-  kvKey: { color: theme.color.onSurfaceSecondary, fontSize: 11 },
+  kvActive: {
+    borderColor: theme.color.brand,
+    backgroundColor: theme.color.brandTertiary,
+  },
+  kvHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  kvKey: { color: theme.color.onSurfaceSecondary, fontSize: 11, flex: 1 },
   kvVal: { color: theme.color.onSurface, fontSize: 13, fontWeight: "700" },
+  eyeBtn: { padding: 2 },
+  rrCell: {
+    width: "65.5%", backgroundColor: theme.color.surfaceTertiary,
+    borderRadius: 10, padding: 10, gap: 6,
+  },
+  rrRow: { flexDirection: "row", gap: 6 },
+  rrChip: {
+    flex: 1, paddingVertical: 6, paddingHorizontal: 4, borderRadius: 999,
+    borderWidth: 1, borderColor: theme.color.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  rrChipActive: { backgroundColor: theme.color.brand, borderColor: theme.color.brand },
+  rrChipText: { color: theme.color.onSurfaceSecondary, fontSize: 12, fontWeight: "700" },
+  rrChipTextActive: { color: "#002233" },
   sectionLabel: {
     color: theme.color.onSurfaceSecondary, fontSize: 11,
     textTransform: "uppercase", letterSpacing: 1, marginTop: 4,

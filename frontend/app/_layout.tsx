@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider, useAuth } from "@/src/AuthContext";
+import { UserPrefsProvider, useUserPrefs } from "@/src/UserPrefsContext";
 import { theme } from "@/src/theme";
 
 LogBox.ignoreAllLogs(true);
@@ -38,18 +39,28 @@ if (Platform.OS === "android") {
 
 function AuthGate() {
   const { loading, user } = useAuth();
+  const { ready: prefsReady, prefs } = useUserPrefs();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
     if (loading) return;
     const inAuth = segments[0] === "login";
+    const inOnboarding = segments[0] === "onboarding";
     if (!user && !inAuth) {
       router.replace("/login");
-    } else if (user && inAuth) {
-      router.replace("/(tabs)");
+      return;
     }
-  }, [loading, user, segments, router]);
+    if (user) {
+      if (inAuth) { router.replace("/(tabs)"); return; }
+      // Ask for name on first launch after auth
+      if (prefsReady && !prefs.display_name && !inOnboarding) {
+        router.replace("/onboarding");
+      } else if (prefsReady && prefs.display_name && inOnboarding) {
+        router.replace("/(tabs)");
+      }
+    }
+  }, [loading, user, prefsReady, prefs.display_name, segments, router]);
 
   if (loading) {
     return (
@@ -62,7 +73,9 @@ function AuthGate() {
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.color.surface } }}>
       <Stack.Screen name="login" />
+      <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="settings" />
     </Stack>
   );
 }
@@ -107,7 +120,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.color.surface }}>
       <AuthProvider>
-        <AuthGate />
+        <UserPrefsProvider>
+          <AuthGate />
+        </UserPrefsProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );
