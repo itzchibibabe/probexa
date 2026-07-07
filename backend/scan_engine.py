@@ -221,8 +221,30 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
         tp2 = price + atr_val * 3
         tp3 = price + atr_val * 4
 
-    reward = abs(tp1 - entry)
-    rr = round(reward / risk, 2) if risk > 0 else 0.0
+    # ---- Auto Risk:Reward — pick highest realistic ratio ----
+    auto_rr = 2.0
+    if direction == "long" and risk > 0:
+        # Try 3, 2.5, 2, 1.5 — pick highest where TP1 stays within reasonable reach of resistance
+        for candidate in (3.0, 2.5, 2.0, 1.5):
+            tp_test = entry + risk * candidate
+            # Allow TP up to 3% beyond nearest resistance (targets often overshoot slightly)
+            if tp_test <= snap["resistance"] * 1.03 or candidate == 1.5:
+                auto_rr = candidate
+                break
+    elif direction == "short" and risk > 0:
+        for candidate in (3.0, 2.5, 2.0, 1.5):
+            tp_test = entry - risk * candidate
+            if tp_test >= snap["support"] * 0.97 or candidate == 1.5:
+                auto_rr = candidate
+                break
+    # Recompute TPs using auto_rr as primary
+    if direction == "long":
+        tp1 = entry + risk * auto_rr
+        tp2 = entry + risk * (auto_rr * 1.75)
+    elif direction == "short":
+        tp1 = entry - risk * auto_rr
+        tp2 = entry - risk * (auto_rr * 1.75)
+    rr = auto_rr
 
     cond = _conditions(snap, direction, rr)
     display_checklist = _display_checklist(snap, direction, cond)
@@ -264,6 +286,11 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
     # ---- Score / grade / action anchored to CHECKLIST (single source of truth) ----
     passed = sum(1 for v in display_checklist.values() if v)
     total_checks = len(display_checklist)
+    structure = snap["structure"]
+
+    # Structural quality gates — no contradictions
+    structure_ok = structure in ("HH-HL", "LH-LL")
+    trend_ok = snap["trend"] in ("bullish", "bearish")
 
     if direction == "neutral":
         grade = "C"
@@ -271,13 +298,12 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
         score = min(_weighted_score(snap, direction, cond, rr), 50)
         confidence = max(20, score - 15)
     else:
-        if passed == total_checks:
-            # All 6 conditions met → A+ ready
+        if passed == total_checks and structure_ok and trend_ok:
             grade = "A+"
             action = "BUY" if direction == "long" else "SELL"
             score = 95
             confidence = 92
-        elif passed == total_checks - 1:
+        elif passed >= total_checks - 1 and (structure_ok or trend_ok):
             grade = "A"
             action = "BUY" if direction == "long" else "SELL"
             score = 85
@@ -293,7 +319,7 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
             score = 40 + passed * 5
             confidence = 30 + passed * 5
 
-        # Advanced-analysis demotions
+        # Advanced demotions — active warnings never coexist with A+
         if htf_status == "unconfirmed" and grade == "A+":
             grade, action, score, confidence = "A", ("BUY" if direction == "long" else "SELL"), 82, 84
         if liquidity_sweep_status == "possible_sweep" and grade in ("A+", "A"):
@@ -301,6 +327,44 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
             action = "WAIT"
             score = min(score, 74)
             confidence = min(confidence, 78)
+
+    # ---- Final validation clamps: no self-contradictions ----
+    if not structure_ok and grade == "A+":
+        grade = "A"
+        action = "BUY" if direction == "long" else "SELL"
+        score = min(score, 85)
+        confidence = min(confidence, 87)
+    if not trend_ok and grade in ("A+", "A"):
+        grade = "B"
+        action = "WAIT"
+        score = min(score, 72)
+        confidence = min(confidence, 74)
+    if action == "WAIT":
+        confidence = min(confidence, 82)
+    if grade == "A+":
+        confidence = max(confidence, 88)
+    elif grade == "A":
+        confidence = max(80, min(confidence, 89))
+
+    # ---- Entry quality: is NOW a good moment to enter? ----
+    # Optimal entry = right at support (long) or resistance (short) on retest.
+    entry_quality_score = 0
+    if direction == "long":
+        # Distance from support as % of ATR
+        dist = (price - snap["support"]) / max(atr_val, 1e-9)
+        entry_quality_score = max(0, 100 - int(dist * 15))
+    elif direction == "short":
+        dist = (snap["resistance"] - price) / max(atr_val, 1e-9)
+        entry_quality_score = max(0, 100 - int(dist * 15))
+    entry_quality_score = min(100, entry_quality_score)
+    if entry_quality_score >= 85:
+        entry_quality_label = "Excellent"
+    elif entry_quality_score >= 70:
+        entry_quality_label = "Good"
+    elif entry_quality_score >= 50:
+        entry_quality_label = "Fair"
+    else:
+        entry_quality_label = "Wait for Pullback"
 
     missing = [CONDITION_LABELS.get(k, k) for k, v in cond.items() if not v]
 
@@ -318,10 +382,13 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
         "take_profit_2": round(tp2, 6),
         "take_profit_3": round(tp3, 6),
         "risk_reward": rr,
+        "auto_rr": rr,
         "ai_score": score,
         "confidence": confidence,
         "trade_grade": grade,
         "action": action,
+        "entry_quality_score": entry_quality_score,
+        "entry_quality_label": entry_quality_label,
         "change_pct": snap["change_pct"],
         "rsi": snap["rsi"],
         "conditions": cond,

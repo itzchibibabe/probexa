@@ -34,16 +34,16 @@ export default function AnalyzeSymbol() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [inWatchlist, setInWatchlist] = useState(false);
-  const [rr, setRR] = useState<number>(2);
+  const [rr, setRR] = useState<number | "AUTO">("AUTO");
   const [activeLevels, setActiveLevels] = useState<Set<string>>(new Set());
 
   const load = useCallback(async (tf: string) => {
     setLoading(true); setError("");
     try {
-      const url = `/setup/${symbol}?timeframe=${tf}&hi_tf_confirm=${advHtf ? 1 : 0}&liq_sweep=${advLiq ? 1 : 0}`;
+      const url = `/setup/${symbol}?timeframe=${tf}&hi_tf_confirm=${advHtf ? 1 : 0}&liq_sweep=${advLiq ? 1 : 0}&fresh=1`;
       const r = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api${url}`).then((x) => x.ok ? x.json() : Promise.reject(new Error(String(x.status))));
       setRawSetup(r);
-      setRR(r.risk_reward >= 1.5 && r.risk_reward <= 3 ? Math.round(r.risk_reward * 2) / 2 : 2);
+      setRR("AUTO");
     } catch (e: any) {
       setError(e.message || "Failed to load setup");
     } finally { setLoading(false); }
@@ -60,20 +60,22 @@ export default function AnalyzeSymbol() {
     })();
   }, [symbol]);
 
-  // Setup with RR-adjusted TPs
+  // Setup with RR-adjusted TPs. In AUTO mode we trust the backend-computed TPs.
   const setup = useMemo(() => {
     if (!rawSetup) return null;
+    if (rr === "AUTO") return rawSetup;
     const { tp1, tp2 } = computeTPs(rawSetup.entry, rawSetup.stop_loss, rr);
     return { ...rawSetup, take_profit_1: tp1, take_profit_2: tp2, risk_reward: rr };
   }, [rawSetup, rr]);
 
-  // RR validation warning — TP1 exceeds nearest major S/R
+  // RR warning only when user manually picked an unrealistic RR
   const rrWarning = useMemo(() => {
     if (!setup) return false;
+    if (rr === "AUTO") return false;
     if (setup.direction === "long" && setup.take_profit_1 > setup.resistance * 1.005) return true;
     if (setup.direction === "short" && setup.take_profit_1 < setup.support * 0.995) return true;
     return false;
-  }, [setup]);
+  }, [setup, rr]);
 
   const toggleLevel = (key: string, _price: number) => {
     setActiveLevels((prev) => {

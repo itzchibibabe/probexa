@@ -35,22 +35,23 @@ const CHECKLIST_KEYS = [
 /** These are the ONLY cards that get an eye toggle. */
 const TOGGLEABLE = new Set(["Support", "Resistance", "Entry", "Stop Loss", "Take Profit 1", "Take Profit 2"]);
 
-const RR_OPTIONS = [1.5, 2, 2.5, 3];
+const RR_OPTIONS: (number | "AUTO")[] = ["AUTO", 1.5, 2, 2.5, 3];
 
 type Props = {
   setup: Setup;
   timeframe?: string;
   activeLevels?: Set<string>;
   onToggleLevel?: (key: string, price: number) => void;
-  rr?: number;
-  onChangeRR?: (rr: number) => void;
+  rr?: number | "AUTO";
+  onChangeRR?: (rr: number | "AUTO") => void;
 };
 
 export function TradeCard({ setup, timeframe, activeLevels, onToggleLevel, rr, onChangeRR }: Props) {
   const isWait = setup.action === "WAIT" || setup.confidence < 85;
   const cl = setup.display_checklist || {};
   const allTrue = CHECKLIST_KEYS.every((k) => cl[k]);
-  const currentRR = rr ?? (setup.risk_reward || 2);
+  const currentRR = rr ?? "AUTO";
+  const displayRR = (setup.risk_reward || 2).toFixed(1);
 
   return (
     <View style={styles.card} testID="trade-card">
@@ -106,24 +107,30 @@ export function TradeCard({ setup, timeframe, activeLevels, onToggleLevel, rr, o
 
         {/* Risk : Reward dropdown */}
         <View style={styles.rrCell}>
-          <Text style={styles.kvKey}>Risk : Reward</Text>
+          <Text style={styles.kvKey}>Risk : Reward · {currentRR === "AUTO" ? `AUTO (1:${displayRR})` : `1:${currentRR}`}</Text>
           <View style={styles.rrRow}>
             {RR_OPTIONS.map((r) => {
-              const active = Math.abs(currentRR - r) < 0.05;
+              const active = currentRR === r;
+              const label = r === "AUTO" ? "AUTO" : `1:${r}`;
               return (
                 <Pressable
-                  key={r}
+                  key={String(r)}
                   testID={`rr-${r}`}
                   onPress={() => onChangeRR?.(r)}
                   style={[styles.rrChip, active && styles.rrChipActive]}
                 >
-                  <Text style={[styles.rrChipText, active && styles.rrChipTextActive]}>1:{r}</Text>
+                  <Text style={[styles.rrChipText, active && styles.rrChipTextActive]}>{label}</Text>
                 </Pressable>
               );
             })}
           </View>
         </View>
 
+        <Kv label="Entry Quality" value={(setup as any).entry_quality_label || "-"} accent={
+          (setup as any).entry_quality_score >= 85 ? theme.color.brandSecondary :
+          (setup as any).entry_quality_score >= 70 ? theme.color.brand :
+          (setup as any).entry_quality_score >= 50 ? theme.color.warning : theme.color.error
+        } />
         <Kv label="Score" value={`${setup.ai_score}/100`} accent={theme.color.brand} />
         <Kv label="Confidence" value={`${setup.confidence}%`} accent={actionColor(setup.action)} />
         <Kv label="Grade" value={setup.trade_grade} accent={gradeColor(setup.trade_grade)} />

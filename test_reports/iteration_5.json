@@ -1,0 +1,86 @@
+{
+  "summary": "Backend-only verification of the 7 Trading Engine Logic Updates on LIVE OKX data. 18/18 pytest cases passed against https://futures-analyzer-4.preview.emergentagent.com. All 9 invariants (grade set, action set, A+ contract, WAIT contract, auto_rr set + rr==auto_rr, entry_quality_score/label banding, level ordering per direction, schema stability, fresh=1 HTTP 200) hold for every setup returned by /api/scan (best_setups + preparing) and /api/setup/{BTC,ETH,SOL} in both cached and fresh modes. Contradiction sweep over 18 combined setups found ZERO self-contradictions. Regression endpoints (/api/market/pairs, /api/goals/summary, /api/watchlist) also pass. Note: the scan API returns `preparing` (not `preparing_setups` as mentioned in the request); tests treat both names as equivalent and use the actual `preparing` array.",
+  "invariants_verified": {
+    "1_grade_in_valid_set": {"status": "PASS", "example": "BZUSDT trade_grade=A, all 18 setups ∈ {A+,A,B,C}"},
+    "2_action_in_valid_set": {"status": "PASS", "example": "best_setups actions={BUY:6, SELL:2}; preparing actions={WAIT:10}"},
+    "3_A+_contract": {"status": "PASS (vacuous)", "example": "No A+ present in current scan sample (grade_dist_best={A:8}); A+ contract enforced defensively in code and by _assert_setup_invariants when encountered on setup detail as well — no violations observed."},
+    "4_WAIT_contract": {"status": "PASS", "example": "All 10 `preparing` WAIT items have grade∈{B,C} and confidence≤82; BTC/ETH/SOL setup detail also WAIT with grade C/B and confidence ≤ 82."},
+    "5_auto_rr_and_rr_equal": {"status": "PASS", "example": "BTCUSDT auto_rr=2.0 risk_reward=2.0; BZUSDT auto_rr=1.5 risk_reward=1.5. All values ∈ {1.5,2.0,2.5,3.0}."},
+    "6_entry_quality_label_matches_score": {"status": "PASS", "example": "BZUSDT eqs=16 → 'Wait for Pullback' (matches band <50). All 18 setups have int score∈[0,100] and label matches band."},
+    "7_level_ordering_per_direction": {"status": "PASS", "example": "long BZUSDT: sl<entry<tp1. short setups sl>entry>tp1. Neutral BTCUSDT skipped (no direction enforced)."},
+    "8_fresh_1_returns_200_bypass": {"status": "PASS (schema) / SOFT-WARN (price equal)", "example": "Two back-to-back /api/setup/BTCUSDT?timeframe=1h&fresh=1 calls both HTTP 200 in <60s. price1=63199.2, price2=63199.2 (diff=0.00). Cache is technically bypassed (no cache headers, latency similar), but during a quiet minute prices may naturally coincide — recommend main agent add a `served_at`/`data_ts` field so fresh vs cached is unambiguously distinguishable."},
+    "9_no_500s_no_missing_keys_stable_schema": {"status": "PASS", "example": "All required keys (symbol, direction, price, entry, stop_loss, take_profit_1/2/3, risk_reward, auto_rr, ai_score, confidence, trade_grade, action, entry_quality_score, entry_quality_label, display_checklist, support, resistance) present on every response."}
+  },
+  "contradiction_sweep": {
+    "sample_size": 18,
+    "contradictions_found": 0,
+    "checks_run": [
+      "WAIT & grade∈{A+,A}",
+      "A+ & any checklist False",
+      "A+ & confidence<88",
+      "A+ & direction==neutral",
+      "long & (sl>=entry or tp1<=entry)",
+      "short & (sl<=entry or tp1>=entry)",
+      "auto_rr not in {1.5,2.0,2.5,3.0}",
+      "risk_reward != auto_rr",
+      "entry_quality_label mismatches score band"
+    ]
+  },
+  "endpoints_tested": {
+    "GET /api/": "200 {app:Probexa, ok:true}",
+    "GET /api/scan?timeframe=30m": "200 in ~2s, 8 best + 10 preparing",
+    "GET /api/scan?timeframe=30m&fresh=1": "200 in <90s",
+    "GET /api/setup/BTCUSDT?timeframe=1h": "200 (direction=neutral, grade=C, action=WAIT)",
+    "GET /api/setup/BTCUSDT?timeframe=1h&fresh=1": "200",
+    "GET /api/setup/ETHUSDT?timeframe=30m": "200",
+    "GET /api/setup/ETHUSDT?timeframe=30m&fresh=1": "200",
+    "GET /api/setup/SOLUSDT?timeframe=1h": "200",
+    "GET /api/market/pairs": "200, non-empty",
+    "GET /api/goals/summary (Bearer)": "200",
+    "GET /api/watchlist (Bearer)": "200"
+  },
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/scan",
+        "issue": "Response key is `preparing`, but main agent/reviewer spec referred to `preparing_setups`. Naming inconsistency between spec and impl — consider aliasing or renaming for clarity."
+      },
+      {
+        "endpoint": "/api/setup/{symbol}?fresh=1",
+        "issue": "Cache bypass produces identical price on back-to-back calls during quiet OKX minutes (BTC price1=price2=63199.2). Fresh path returns 200 quickly, but there is no `served_at`/`data_ts`/`cache: MISS` marker in the response body to unambiguously prove cache bypass. Recommend adding a `data_ts` epoch millisecond or `served_from: fresh|cache` field."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5_trading_logic.py",
+    "/app/test_reports/pytest/iteration5_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Add a `data_ts` / `served_from` marker to /api/setup and /api/scan so cache-bypass (fresh=1) is unambiguously observable from the response body.",
+    "OPTIONAL: Normalize scan response key naming — either rename `preparing` → `preparing_setups` or update the spec (agent_communication in test_result.md still uses the shorter `preparing`)."
+  ],
+  "critical_code_review_comments": [
+    "Grade/action/checklist wiring is well-anchored (build_setup uses display_checklist as single source of truth). No self-contradictions observed across 18 live setups.",
+    "Entry Quality banding is implemented cleanly and matches the (>=85 Excellent, >=70 Good, >=50 Fair, else Wait for Pullback) contract.",
+    "auto_rr is always echoed into `risk_reward` — no divergence across BTC/ETH/SOL/BZ live samples.",
+    "WAIT clamp (confidence ≤ 82) held across all 10 preparing items. A+ path could not be exercised in this scan sample because no symbol currently satisfies 6/6 checklist + structure_ok + trend_ok — expected behavior of strict grading."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5_trading_logic.py (new)",
+    "/app/test_reports/pytest/iteration5_results.xml (new)",
+    "/app/test_reports/iteration_5.json (this file)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "not tested (backend-only run per request)"},
+  "seed_data_creation": "None — used seeded Bearer token test-token-abc-123 from /app/memory/test_credentials.md for authed spot-checks.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend 7 trading-engine-logic updates fully verified live on OKX. If frontend UI testing is next: focus on TradeCard rendering (auto_rr pill, entry_quality label with color band) and analyze/[symbol] refresh flow calling fresh=1. Also note grade A+ is currently absent from the live universe, so UI must gracefully render A/B/C without crashes. Scan bucket key is `preparing` not `preparing_setups`.",
+  "rca_of_issue": "N/A — no failures. Only two soft observations: (1) fresh=1 price parity on quiet minutes (need a server-side timestamp marker to prove bypass), (2) `preparing` vs `preparing_setups` naming mismatch between spec doc and implementation."
+}

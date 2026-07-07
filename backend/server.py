@@ -324,12 +324,13 @@ async def _get_universe() -> List[str]:
 
 
 @api.get("/scan")
-async def scan_markets(timeframe: str = "1h", limit: int = 300, hi_tf_confirm: int = 0, liq_sweep: int = 0):
+async def scan_markets(timeframe: str = "1h", limit: int = 300, hi_tf_confirm: int = 0, liq_sweep: int = 0, fresh: int = 0):
     key = f"scan:{timeframe}:{limit}:{hi_tf_confirm}:{liq_sweep}"
     now = _time.time()
-    cached = _scan_cache.get(key)
-    if cached and (now - cached["at"] < _SCAN_TTL):
-        return cached["data"]
+    if not fresh:
+        cached = _scan_cache.get(key)
+        if cached and (now - cached["at"] < _SCAN_TTL):
+            return cached["data"]
 
     universe = (await _get_universe())[:limit]
     htf = HTF_MAP.get(timeframe) if hi_tf_confirm else None
@@ -379,8 +380,8 @@ async def scan_markets(timeframe: str = "1h", limit: int = 300, hi_tf_confirm: i
 
 
 @api.get("/setup/{symbol}")
-async def get_setup(symbol: str, timeframe: str = "1h", hi_tf_confirm: int = 0, liq_sweep: int = 0):
-    """Compute a full setup for a single symbol (rule-based, no LLM)."""
+async def get_setup(symbol: str, timeframe: str = "1h", hi_tf_confirm: int = 0, liq_sweep: int = 0, fresh: int = 0):
+    """Compute a full setup for a single symbol (rule-based, no LLM). Always live — no per-symbol cache."""
     sym = symbol.upper()
     htf = HTF_MAP.get(timeframe) if hi_tf_confirm else None
     setup = await _fetch_one_setup(sym, timeframe, htf=htf)
