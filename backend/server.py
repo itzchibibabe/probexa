@@ -325,7 +325,7 @@ async def _get_universe() -> List[str]:
 
 @api.get("/scan")
 async def scan_markets(timeframe: str = "1h", limit: int = 300, hi_tf_confirm: int = 0, liq_sweep: int = 0):
-    key = f"scan:{timeframe}:{limit}:{hi_tf_confirm}"
+    key = f"scan:{timeframe}:{limit}:{hi_tf_confirm}:{liq_sweep}"
     now = _time.time()
     cached = _scan_cache.get(key)
     if cached and (now - cached["at"] < _SCAN_TTL):
@@ -608,7 +608,12 @@ async def watchlist_details(timeframe: str = "1h", user: dict = Depends(require_
 
     async def worker(sym):
         async with sem:
-            return await _fetch_one_setup(sym, timeframe)
+            s = await _fetch_one_setup(sym, timeframe)
+            if s is None:
+                # 1x retry on transient OKX flake
+                await _asyncio.sleep(0.3)
+                s = await _fetch_one_setup(sym, timeframe)
+            return s
 
     setups = await _asyncio.gather(*(worker(s) for s in syms))
     out = []
@@ -625,16 +630,35 @@ async def watchlist_details(timeframe: str = "1h", user: dict = Depends(require_
                 "direction": setup["direction"],
             })
         else:
-            out.append({
-                "symbol": it["symbol"],
-                "price": None,
-                "change_pct": None,
-                "action": "WAIT",
-                "trade_grade": "-",
-                "ai_score": 0,
-                "confidence": 0,
-                "direction": "neutral",
-            })
+            # Fall back to a plain ticker fetch so price is never null
+            try:
+                inst = to_okx_inst(it["symbol"])
+                td = await _okx_get("/api/v5/market/ticker", {"instId": inst})
+                d = td[0] if td else {}
+                open24 = float(d.get("open24h", 0) or 0)
+                last = float(d.get("last", 0) or 0)
+                change_pct = ((last - open24) / open24 * 100) if open24 else 0.0
+                out.append({
+                    "symbol": it["symbol"],
+                    "price": last,
+                    "change_pct": round(change_pct, 4),
+                    "action": "WAIT",
+                    "trade_grade": "-",
+                    "ai_score": 0,
+                    "confidence": 0,
+                    "direction": "neutral",
+                })
+            except Exception:
+                out.append({
+                    "symbol": it["symbol"],
+                    "price": None,
+                    "change_pct": None,
+                    "action": "WAIT",
+                    "trade_grade": "-",
+                    "ai_score": 0,
+                    "confidence": 0,
+                    "direction": "neutral",
+                })
     return {"items": out, "timeframe": timeframe}
 
 
