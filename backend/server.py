@@ -330,7 +330,10 @@ async def scan_markets(timeframe: str = "1h", limit: int = 300, hi_tf_confirm: i
     if not fresh:
         cached = _scan_cache.get(key)
         if cached and (now - cached["at"] < _SCAN_TTL):
-            return cached["data"]
+            cd = dict(cached["data"])
+            cd["served_from"] = "cache"
+            cd["cache_age_sec"] = round(now - cached["at"], 2)
+            return cd
 
     universe = (await _get_universe())[:limit]
     htf = HTF_MAP.get(timeframe) if hi_tf_confirm else None
@@ -374,6 +377,9 @@ async def scan_markets(timeframe: str = "1h", limit: int = 300, hi_tf_confirm: i
         "scanned_count": len(setups),
         "universe_size": len(universe),
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "data_ts": int(now * 1000),
+        "served_from": "live",
+        "cache_age_sec": 0,
     }
     _scan_cache[key] = {"at": now, "data": data}
     return data
@@ -390,6 +396,8 @@ async def get_setup(symbol: str, timeframe: str = "1h", hi_tf_confirm: int = 0, 
     if not liq_sweep:
         setup["liquidity_sweep_status"] = None
     setup.pop("snapshot", None)
+    setup["data_ts"] = int(_time.time() * 1000)
+    setup["served_from"] = "live"
     return setup
 
 
