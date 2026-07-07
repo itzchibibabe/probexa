@@ -270,3 +270,37 @@ agent_communication:
       Iteration 5 backend test PASSED (18/18). Frontend screenshot verification PASSED.
       Added data_ts/served_from/cache_age_sec fields to make cache-bypass provable.
       All 7 Trading Engine Logic Updates are verified end-to-end.
+  - agent: "main"
+    message: |
+      NEW CHANGE — Iteration 6 request:
+      Redesigned "Breakout Confirmed" as intelligent multi-factor confirmation.
+      Files changed:
+        - /app/backend/indicators.py       (+ new breakout_confirmation function ~140 lines)
+        - /app/backend/scan_engine.py       (wires breakout into _conditions, _display_checklist, build_setup;
+                                             exposes checklist_reasons + breakout_analysis in response)
+        - /app/frontend/src/TradeCard.tsx   (renders checklist_reasons under each item)
+
+      Please BACKEND-TEST that all previous 7 invariants still hold AND validate the new breakout contract:
+      (A) Ensure `breakout_analysis` is present on every setup returned by /api/setup/{symbol} and every
+          item in /api/scan best_setups + preparing arrays.
+      (B) `breakout_analysis` schema: {confirmed: bool, reason: str, criteria: dict[str,bool], retest_held: bool}
+      (C) `display_checklist["Breakout Confirmed"] == breakout_analysis["confirmed"]` (single source of truth).
+      (D) When `breakout_analysis.confirmed == True`, ALL 6 criteria keys must be True:
+          body_close_beyond_level, volume_above_average, strong_momentum_candle,
+          structure_confirms, price_still_accepted, htf_aligned.
+      (E) When `confirmed == False`, `reason` is non-empty and human-readable.
+      (F) `checklist_reasons["Breakout Confirmed"]` == `breakout_analysis.reason`.
+      (G) All previous 9 invariants from iteration_5 must still pass on live OKX data.
+      (H) Grade A+ still requires ALL 6 display_checklist items True (so must have Breakout Confirmed True).
+      (I) For neutral direction setups, breakout_analysis may be null — that's fine.
+
+      Endpoints (LIVE only, no mocks):
+        GET /api/scan?timeframe=1h
+        GET /api/scan?timeframe=30m&fresh=1
+        GET /api/setup/PENDLEUSDT?timeframe=1h   (known A grade example)
+        GET /api/setup/GOOGLUSDT?timeframe=1h   (known "volume below average" reason)
+        GET /api/setup/BTCUSDT?timeframe=1h     (known "no candle body has closed above" reason)
+        GET /api/setup/AIUSDT?timeframe=1h      (known short direction case)
+
+      Save results to /app/test_reports/iteration_6.json.
+      Auth is NOT required for scan/setup. If any invariant fails, DO NOT fix code — just report clearly.

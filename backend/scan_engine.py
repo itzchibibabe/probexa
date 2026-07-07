@@ -1,6 +1,6 @@
 """Rule-based scan engine — no LLM. Scores each pair 0-100 and lists missing conditions."""
 from typing import Dict, List, Any, Optional
-from indicators import compute_snapshot
+from indicators import compute_snapshot, breakout_confirmation
 
 
 DEFAULT_UNIVERSE = [
@@ -64,20 +64,21 @@ def _direction(snap: Dict[str, Any]) -> str:
     return "neutral"
 
 
-def _conditions(snap: Dict[str, Any], direction: str, rr: float) -> Dict[str, bool]:
+def _conditions(snap: Dict[str, Any], direction: str, rr: float, breakout: Optional[Dict[str, Any]] = None) -> Dict[str, bool]:
     price = snap["price"]
     r = snap["rsi"]
     ml, ms, mh = snap["macd"], snap["macd_signal"], snap["macd_hist"]
     support = snap["support"]
     resistance = snap["resistance"]
     ema20, ema50, ema200 = snap["ema20"], snap["ema50"], snap["ema200"]
+    breakout_ok = bool(breakout and breakout.get("confirmed"))
 
     if direction == "long":
         return {
             "trend": snap["trend"] == "bullish",
             "ema_alignment": ema20 > ema50 > ema200,
             "market_structure": snap["structure"] == "HH-HL" or snap["bos"],
-            "break_resistance": price > resistance * 0.998,
+            "break_resistance": breakout_ok,
             "above_ema20": price > ema20,
             "rsi_healthy": 45 <= r <= 72,
             "macd_bullish": ml > ms and mh > 0,
@@ -90,7 +91,7 @@ def _conditions(snap: Dict[str, Any], direction: str, rr: float) -> Dict[str, bo
             "trend": snap["trend"] == "bearish",
             "ema_alignment": ema20 < ema50 < ema200,
             "market_structure": snap["structure"] == "LH-LL" or snap["bos"],
-            "break_support": price < support * 1.002,
+            "break_support": breakout_ok,
             "below_ema20": price < ema20,
             "rsi_healthy": 28 <= r <= 55,
             "macd_bearish": ml < ms and mh < 0,
@@ -159,18 +160,19 @@ def _action(direction: str, score: int, confidence: int) -> str:
     return "WAIT"
 
 
-def _display_checklist(snap: Dict[str, Any], direction: str, cond: Dict[str, bool]) -> Dict[str, bool]:
+def _display_checklist(snap: Dict[str, Any], direction: str, cond: Dict[str, bool], breakout: Optional[Dict[str, Any]] = None) -> Dict[str, bool]:
     """Return a standardized 6-item live checklist for the UI."""
     price = snap["price"]
     ema20 = snap["ema20"]
+    breakout_ok = bool(breakout and breakout.get("confirmed"))
     if direction == "long":
         return {
             "Trend Confirmed": snap["trend"] == "bullish" or (snap["ema20"] > snap["ema50"]),
             "EMA Alignment": snap["ema20"] > snap["ema50"] > snap["ema200"],
             "Support Holding": price > snap["support"] * 1.001,
             "Volume Confirmation": snap["volume_spike"] or snap["volume"] > snap["volume_avg20"],
-            "Breakout Confirmed": price > snap["resistance"] * 0.998,
-            "Retest Complete": price > ema20 and 45 <= snap["rsi"] <= 70,
+            "Breakout Confirmed": breakout_ok,
+            "Retest Complete": (breakout is not None and breakout.get("retest_held", False)) or (price > ema20 and 45 <= snap["rsi"] <= 70),
         }
     if direction == "short":
         return {
@@ -178,8 +180,8 @@ def _display_checklist(snap: Dict[str, Any], direction: str, cond: Dict[str, boo
             "EMA Alignment": snap["ema20"] < snap["ema50"] < snap["ema200"],
             "Support Holding": price < snap["resistance"] * 0.999,
             "Volume Confirmation": snap["volume_spike"] or snap["volume"] > snap["volume_avg20"],
-            "Breakout Confirmed": price < snap["support"] * 1.002,
-            "Retest Complete": price < ema20 and 30 <= snap["rsi"] <= 55,
+            "Breakout Confirmed": breakout_ok,
+            "Retest Complete": (breakout is not None and breakout.get("retest_held", False)) or (price < ema20 and 30 <= snap["rsi"] <= 55),
         }
     return {
         "Trend Confirmed": False,
@@ -246,8 +248,29 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
         tp2 = entry - risk * (auto_rr * 1.75)
     rr = auto_rr
 
-    cond = _conditions(snap, direction, rr)
-    display_checklist = _display_checklist(snap, direction, cond)
+    # ---- Higher timeframe snapshot (computed once, reused by breakout + htf_status) ----
+    htf_snap = None
+    if htf_klines and len(htf_klines) >= 60:
+        try:
+            htf_snap = compute_snapshot(htf_klines)
+        except Exception:
+            htf_snap = None
+
+    # ---- Intelligent Breakout Confirmation ----
+    breakout = None
+    if direction == "long":
+        breakout = breakout_confirmation(
+            klines, snap["resistance"], "long", atr_val,
+            snap["structure"], htf_snap=htf_snap, snap=snap,
+        )
+    elif direction == "short":
+        breakout = breakout_confirmation(
+            klines, snap["support"], "short", atr_val,
+            snap["structure"], htf_snap=htf_snap, snap=snap,
+        )
+
+    cond = _conditions(snap, direction, rr, breakout)
+    display_checklist = _display_checklist(snap, direction, cond, breakout)
 
     # ---- Liquidity Sweep detection ----
     liquidity_sweep_status = None
@@ -270,11 +293,10 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
     except Exception:
         pass
 
-    # ---- Higher Timeframe Confirmation ----
+    # ---- Higher Timeframe Confirmation (uses htf_snap already computed above) ----
     htf_status = None
-    if htf_klines and len(htf_klines) >= 60:
+    if htf_snap is not None:
         try:
-            htf_snap = compute_snapshot(htf_klines)
             htf_dir = _direction(htf_snap)
             if direction != "neutral" and htf_dir == direction:
                 htf_status = "confirmed"
@@ -368,6 +390,12 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
 
     missing = [CONDITION_LABELS.get(k, k) for k, v in cond.items() if not v]
 
+    checklist_reasons: Dict[str, str] = {}
+    if breakout:
+        checklist_reasons["Breakout Confirmed"] = breakout.get("reason", "")
+        if breakout.get("retest_held"):
+            checklist_reasons["Retest Complete"] = "Retest of level held — price bounced away"
+
     return {
         "symbol": symbol,
         "direction": direction,
@@ -394,6 +422,8 @@ def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) ->
         "conditions": cond,
         "missing_conditions": missing,
         "display_checklist": display_checklist,
+        "checklist_reasons": checklist_reasons,
+        "breakout_analysis": breakout,
         "liquidity_sweep_status": liquidity_sweep_status,
         "htf_status": htf_status,
         "snapshot": snap,

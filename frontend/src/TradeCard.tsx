@@ -21,6 +21,7 @@ type Setup = {
   confidence: number;
   price?: number;
   display_checklist?: Record<string, boolean>;
+  checklist_reasons?: Record<string, string>;
 };
 
 const CHECKLIST_KEYS = [
@@ -141,6 +142,7 @@ export function TradeCard({ setup, timeframe, activeLevels, onToggleLevel, rr, o
       <View style={styles.checklist}>
         {CHECKLIST_KEYS.map((k) => {
           const ok = !!cl[k];
+          const reason = setup.checklist_reasons?.[k];
           return (
             <View key={k} style={styles.checkRow} testID={`check-${k}`}>
               <Ionicons
@@ -148,9 +150,20 @@ export function TradeCard({ setup, timeframe, activeLevels, onToggleLevel, rr, o
                 size={20}
                 color={ok ? theme.color.brandSecondary : theme.color.onSurfaceSecondary}
               />
-              <Text style={[styles.checkText, ok ? { color: theme.color.onSurface } : { color: theme.color.onSurfaceSecondary }]}>
-                {k}
-              </Text>
+              <View style={styles.checkTextWrap}>
+                <Text style={[styles.checkText, ok ? { color: theme.color.onSurface } : { color: theme.color.onSurfaceSecondary }]}>
+                  {k}
+                </Text>
+                {reason ? (
+                  <Text
+                    style={[styles.checkReason, ok ? styles.checkReasonOk : styles.checkReasonFail]}
+                    numberOfLines={2}
+                    testID={`reason-${k}`}
+                  >
+                    {ok ? "✓ " : "· "}{reason}
+                  </Text>
+                ) : null}
+              </View>
             </View>
           );
         })}
@@ -265,6 +278,10 @@ const styles = StyleSheet.create({
   checklist: {
     backgroundColor: theme.color.surfaceTertiary, borderRadius: 12, padding: 12, gap: 10,
   },
-  checkRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  checkRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  checkTextWrap: { flex: 1 },
   checkText: { fontSize: 14, fontWeight: "600" },
+  checkReason: { fontSize: 11, marginTop: 2, lineHeight: 15 },
+  checkReasonOk: { color: theme.color.brandSecondary },
+  checkReasonFail: { color: theme.color.onSurfaceSecondary },
 });

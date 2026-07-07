@@ -162,3 +162,197 @@ def compute_snapshot(klines: List[List]) -> Dict[str, Any]:
         "recent_highs": [round(h[1], 6) for h in highs],
         "recent_lows": [round(lo[1], 6) for lo in lows],
     }
+
+
+def breakout_confirmation(
+    klines: List[List],
+    level: float,
+    direction: str,
+    atr_val: float,
+    structure: str,
+    htf_snap: Dict[str, Any] = None,
+    snap: Dict[str, Any] = None,
+) -> Dict[str, Any]:
+    """Intelligent multi-factor breakout confirmation.
+
+    Ticks 'Breakout Confirmed' only when ALL of the following are true:
+      1. Candle BODY closes clearly above resistance (long) / below support (short) — wicks alone never count
+      2. Breakout volume above recent 20-candle average (+20%)
+      3. Strong momentum: body >= 55% of candle range AND body >= 50% of ATR
+      4. Market structure confirms (HH-HL long, LH-LL short)
+      5. Price remains accepted — not immediately rejected back into the range
+      6. Higher timeframe trend aligns (falls back to same-TF EMA200 slope if HTF data unavailable)
+
+    A held retest is a *bonus* signal — not required for confirmation.
+    Returns {confirmed, reason, criteria, retest_held}. Never raises.
+    """
+    if direction not in ("long", "short") or not klines or len(klines) < 25:
+        return {
+            "confirmed": False,
+            "reason": "Direction unclear or insufficient candle data",
+            "criteria": {},
+            "retest_held": False,
+        }
+
+    df = to_df(klines)
+    lookback = min(20, len(df) - 1)
+    recent = df.tail(lookback + 1).reset_index(drop=True)
+
+    # --- Locate the breakout candle (most recent clean cross of level) ---
+    breakout_idx = None
+    for i in range(len(recent) - 1, 0, -1):
+        prev_close = float(recent.iloc[i - 1]["close"])
+        cur_close = float(recent.iloc[i]["close"])
+        cur_open = float(recent.iloc[i]["open"])
+        if direction == "long":
+            body_beyond = cur_close > level * 1.001 and cur_close > cur_open
+            prev_beyond = prev_close > level
+            if body_beyond and not prev_beyond:
+                breakout_idx = i
+                break
+        else:
+            body_beyond = cur_close < level * 0.999 and cur_close < cur_open
+            prev_beyond = prev_close < level
+            if body_beyond and not prev_beyond:
+                breakout_idx = i
+                break
+
+    # If no fresh cross was found but price is already sitting beyond the level,
+    # treat the most recent candle as the reference (already-broken-out regime).
+    if breakout_idx is None:
+        last = recent.iloc[-1]
+        last_close = float(last["close"])
+        if direction == "long" and last_close > level * 1.001:
+            breakout_idx = len(recent) - 1
+        elif direction == "short" and last_close < level * 0.999:
+            breakout_idx = len(recent) - 1
+
+    structure_confirms = (direction == "long" and structure == "HH-HL") or (
+        direction == "short" and structure == "LH-LL"
+    )
+
+    if breakout_idx is None:
+        side = "above" if direction == "long" else "below"
+        return {
+            "confirmed": False,
+            "reason": f"No candle body has closed {side} the key level yet",
+            "criteria": {
+                "body_close_beyond_level": False,
+                "volume_above_average": False,
+                "strong_momentum_candle": False,
+                "structure_confirms": structure_confirms,
+                "price_still_accepted": False,
+                "htf_aligned": False,
+            },
+            "retest_held": False,
+        }
+
+    b = recent.iloc[breakout_idx]
+    b_open, b_close = float(b["open"]), float(b["close"])
+    b_high, b_low = float(b["high"]), float(b["low"])
+    b_vol = float(b["volume"])
+
+    # 1. Body close beyond level (bullish/bearish body, not just a wick)
+    if direction == "long":
+        body_close_beyond = b_close > level * 1.001 and b_close > b_open
+    else:
+        body_close_beyond = b_close < level * 0.999 and b_close < b_open
+
+    # 2. Volume above recent average (compared to the 20 candles BEFORE the breakout)
+    vw_start = max(0, breakout_idx - 20)
+    vw = recent["volume"].iloc[vw_start:breakout_idx]
+    avg_vol = float(vw.mean()) if len(vw) else 0.0
+    volume_above_avg = avg_vol > 0 and b_vol > avg_vol * 1.2
+
+    # 3. Strong momentum candle — large body, not a doji
+    body = abs(b_close - b_open)
+    candle_range = max(b_high - b_low, 1e-9)
+    body_ratio = body / candle_range
+    body_vs_atr = body / max(atr_val, 1e-9)
+    strong_momentum = body_ratio >= 0.55 and body_vs_atr >= 0.5
+
+    # 5. Price still accepted — check candles AFTER breakout, if any
+    post = recent.iloc[breakout_idx + 1 :]
+    if len(post) == 0:
+        price_accepted = body_close_beyond
+    else:
+        last_close = float(post.iloc[-1]["close"])
+        if direction == "long":
+            still_beyond = last_close > level * 0.999
+            majority_held = int((post["close"] > level).sum()) >= max(1, int(len(post) * 0.5))
+        else:
+            still_beyond = last_close < level * 1.001
+            majority_held = int((post["close"] < level).sum()) >= max(1, int(len(post) * 0.5))
+        price_accepted = bool(still_beyond and majority_held)
+
+    # 6. HTF alignment — real HTF data if supplied, else EMA200-slope proxy
+    if htf_snap:
+        htf_trend = htf_snap.get("trend", "neutral")
+        h20, h50 = htf_snap.get("ema20", 0), htf_snap.get("ema50", 0)
+        if direction == "long":
+            htf_aligned = htf_trend == "bullish" or (h20 > h50)
+        else:
+            htf_aligned = htf_trend == "bearish" or (h20 < h50)
+    elif snap:
+        e50, e200 = snap.get("ema50", 0), snap.get("ema200", 0)
+        p = snap.get("price", 0)
+        if direction == "long":
+            htf_aligned = p > e200 and e50 > e200
+        else:
+            htf_aligned = p < e200 and e50 < e200
+    else:
+        htf_aligned = False
+
+    criteria = {
+        "body_close_beyond_level": bool(body_close_beyond),
+        "volume_above_average": bool(volume_above_avg),
+        "strong_momentum_candle": bool(strong_momentum),
+        "structure_confirms": bool(structure_confirms),
+        "price_still_accepted": bool(price_accepted),
+        "htf_aligned": bool(htf_aligned),
+    }
+    all_pass = all(criteria.values())
+
+    # Bonus: retest held (do not require)
+    retest_held = False
+    if len(post) >= 2:
+        for _, row in post.iterrows():
+            if direction == "long":
+                if float(row["low"]) <= level * 1.005 and float(row["close"]) > level:
+                    retest_held = True
+                    break
+            else:
+                if float(row["high"]) >= level * 0.995 and float(row["close"]) < level:
+                    retest_held = True
+                    break
+
+    if all_pass:
+        parts = ["Body closed beyond level", "volume surge", "strong candle",
+                 f"{structure} structure", "level held"]
+        if retest_held:
+            parts.append("retest held")
+        reason = " · ".join(parts)
+    else:
+        fails = []
+        if not body_close_beyond:
+            fails.append("body did not close beyond level (wick only)")
+        if not volume_above_avg:
+            fails.append("volume below recent average")
+        if not strong_momentum:
+            fails.append("weak candle (doji / small body)")
+        if not structure_confirms:
+            expected = "HH-HL" if direction == "long" else "LH-LL"
+            fails.append(f"structure not {expected}")
+        if not price_accepted:
+            fails.append("price rejected back into range")
+        if not htf_aligned:
+            expected = "bullish" if direction == "long" else "bearish"
+            fails.append(f"higher-timeframe trend not {expected}")
+        reason = "; ".join(fails)
+
+    return {
+        "confirmed": bool(all_pass),
+        "reason": reason,
+        "criteria": criteria,
+        "retest_held": bool(retest_held),
+    }
