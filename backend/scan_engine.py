@@ -1,5 +1,5 @@
 """Rule-based scan engine — no LLM. Scores each pair 0-100 and lists missing conditions."""
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from indicators import compute_snapshot
 
 
@@ -191,7 +191,7 @@ def _display_checklist(snap: Dict[str, Any], direction: str, cond: Dict[str, boo
     }
 
 
-def build_setup(symbol: str, klines: List) -> Dict[str, Any]:
+def build_setup(symbol: str, klines: List, htf_klines: Optional[List] = None) -> Dict[str, Any]:
     if not klines or len(klines) < 60:
         return None
     snap = compute_snapshot(klines)
@@ -225,13 +225,84 @@ def build_setup(symbol: str, klines: List) -> Dict[str, Any]:
     rr = round(reward / risk, 2) if risk > 0 else 0.0
 
     cond = _conditions(snap, direction, rr)
-    score = _weighted_score(snap, direction, cond, rr)
-    confidence = score if direction != "neutral" else max(20, score - 15)
-    grade = _grade(score)
-    action = _action(direction, score, confidence)
+    display_checklist = _display_checklist(snap, direction, cond)
+
+    # ---- Liquidity Sweep detection ----
+    liquidity_sweep_status = None
+    try:
+        recent = klines[-5:]
+        highs = [float(k[2]) for k in recent]
+        lows = [float(k[3]) for k in recent]
+        closes = [float(k[4]) for k in recent]
+        res = snap["resistance"]
+        sup = snap["support"]
+        # Wick above resistance but close below → possible sweep (fake breakout up)
+        if direction == "long" and max(highs) > res and closes[-1] < res:
+            liquidity_sweep_status = "possible_sweep"
+        elif direction == "long" and max(highs) > res and closes[-1] > res:
+            liquidity_sweep_status = "real_breakout"
+        elif direction == "short" and min(lows) < sup and closes[-1] > sup:
+            liquidity_sweep_status = "possible_sweep"
+        elif direction == "short" and min(lows) < sup and closes[-1] < sup:
+            liquidity_sweep_status = "real_breakout"
+    except Exception:
+        pass
+
+    # ---- Higher Timeframe Confirmation ----
+    htf_status = None
+    if htf_klines and len(htf_klines) >= 60:
+        try:
+            htf_snap = compute_snapshot(htf_klines)
+            htf_dir = _direction(htf_snap)
+            if direction != "neutral" and htf_dir == direction:
+                htf_status = "confirmed"
+            else:
+                htf_status = "unconfirmed"
+        except Exception:
+            pass
+
+    # ---- Score / grade / action anchored to CHECKLIST (single source of truth) ----
+    passed = sum(1 for v in display_checklist.values() if v)
+    total_checks = len(display_checklist)
+
+    if direction == "neutral":
+        grade = "C"
+        action = "WAIT"
+        score = min(_weighted_score(snap, direction, cond, rr), 50)
+        confidence = max(20, score - 15)
+    else:
+        if passed == total_checks:
+            # All 6 conditions met → A+ ready
+            grade = "A+"
+            action = "BUY" if direction == "long" else "SELL"
+            score = 95
+            confidence = 92
+        elif passed == total_checks - 1:
+            grade = "A"
+            action = "BUY" if direction == "long" else "SELL"
+            score = 85
+            confidence = 87
+        elif passed >= 3:
+            grade = "B"
+            action = "WAIT"
+            score = 60 + passed * 3
+            confidence = 60 + passed * 3
+        else:
+            grade = "C"
+            action = "WAIT"
+            score = 40 + passed * 5
+            confidence = 30 + passed * 5
+
+        # Advanced-analysis demotions
+        if htf_status == "unconfirmed" and grade == "A+":
+            grade, action, score, confidence = "A", ("BUY" if direction == "long" else "SELL"), 82, 84
+        if liquidity_sweep_status == "possible_sweep" and grade in ("A+", "A"):
+            grade = "B"
+            action = "WAIT"
+            score = min(score, 74)
+            confidence = min(confidence, 78)
 
     missing = [CONDITION_LABELS.get(k, k) for k, v in cond.items() if not v]
-    display_checklist = _display_checklist(snap, direction, cond)
 
     return {
         "symbol": symbol,
@@ -256,5 +327,7 @@ def build_setup(symbol: str, klines: List) -> Dict[str, Any]:
         "conditions": cond,
         "missing_conditions": missing,
         "display_checklist": display_checklist,
+        "liquidity_sweep_status": liquidity_sweep_status,
+        "htf_status": htf_status,
         "snapshot": snap,
     }

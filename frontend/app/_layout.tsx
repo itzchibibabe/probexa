@@ -75,7 +75,6 @@ function AuthGate() {
       <Stack.Screen name="login" />
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="settings" />
     </Stack>
   );
 }

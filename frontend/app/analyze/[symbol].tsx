@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { theme } from "@/src/theme";
 import { api } from "@/src/api";
+import { useUserPrefs } from "@/src/UserPrefsContext";
 import { TradeCard } from "@/src/TradeCard";
 import { TradingViewChart, ChartLevel } from "@/src/TradingViewChart";
 
@@ -23,6 +24,9 @@ function computeTPs(entry: number, sl: number, rr: number): { tp1: number; tp2: 
 
 export default function AnalyzeSymbol() {
   const router = useRouter();
+  const { prefs } = useUserPrefs();
+  const advLiq = !!(prefs as any).advanced?.liquidity_sweep_detection;
+  const advHtf = !!(prefs as any).advanced?.higher_timeframe_confirmation;
   const params = useLocalSearchParams<{ symbol: string; timeframe?: string }>();
   const symbol = (params.symbol || "BTCUSDT").toString().toUpperCase();
   const [timeframe, setTimeframe] = useState<string>((params.timeframe || "1h").toString());
@@ -36,13 +40,14 @@ export default function AnalyzeSymbol() {
   const load = useCallback(async (tf: string) => {
     setLoading(true); setError("");
     try {
-      const r = await api.setup(symbol, tf);
+      const url = `/setup/${symbol}?timeframe=${tf}&hi_tf_confirm=${advHtf ? 1 : 0}&liq_sweep=${advLiq ? 1 : 0}`;
+      const r = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api${url}`).then((x) => x.ok ? x.json() : Promise.reject(new Error(String(x.status))));
       setRawSetup(r);
       setRR(r.risk_reward >= 1.5 && r.risk_reward <= 3 ? Math.round(r.risk_reward * 2) / 2 : 2);
     } catch (e: any) {
       setError(e.message || "Failed to load setup");
     } finally { setLoading(false); }
-  }, [symbol]);
+  }, [symbol, advHtf, advLiq]);
 
   useEffect(() => { load(timeframe); }, [timeframe, load]);
 
@@ -137,6 +142,41 @@ export default function AnalyzeSymbol() {
           </View>
         ) : setup ? (
           <>
+            {/* Advanced Analysis badges */}
+            {(setup.htf_status || setup.liquidity_sweep_status) && (
+              <View style={styles.badgeRow}>
+                {setup.htf_status === "confirmed" && (
+                  <View style={[styles.badge, { borderColor: theme.color.brandSecondary, backgroundColor: theme.color.brandSecondary + "22" }]}>
+                    <Text style={[styles.badgeText, { color: theme.color.brandSecondary }]}>✅ Higher TF Confirmed</Text>
+                  </View>
+                )}
+                {setup.htf_status === "unconfirmed" && (
+                  <View style={[styles.badge, { borderColor: theme.color.warning, backgroundColor: theme.color.warning + "22" }]}>
+                    <Text style={[styles.badgeText, { color: theme.color.warning }]}>⚠ Higher TF Not Aligned</Text>
+                  </View>
+                )}
+                {setup.liquidity_sweep_status === "real_breakout" && (
+                  <View style={[styles.badge, { borderColor: theme.color.brandSecondary, backgroundColor: theme.color.brandSecondary + "22" }]}>
+                    <Text style={[styles.badgeText, { color: theme.color.brandSecondary }]}>✅ Real Breakout</Text>
+                  </View>
+                )}
+                {setup.liquidity_sweep_status === "possible_sweep" && (
+                  <View style={[styles.badge, { borderColor: theme.color.warning, backgroundColor: theme.color.warning + "22" }]}>
+                    <Text style={[styles.badgeText, { color: theme.color.warning }]}>⚠ Possible Liquidity Sweep</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {rrWarning && (
+              <View style={styles.rrWarning} testID="rr-warning">
+                <Ionicons name="warning" size={16} color={theme.color.warning} />
+                <Text style={styles.rrWarningText}>
+                  Selected 1:{rr} may not be realistic. TP exceeds nearest major {setup.direction === "long" ? "resistance" : "support"}.
+                </Text>
+              </View>
+            )}
+
             <TradeCard
               setup={setup}
               timeframe={timeframe}
@@ -204,4 +244,13 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 4,
   },
   calcBtnText: { color: "#002233", fontWeight: "800", fontSize: 15 },
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  badgeText: { fontSize: 12, fontWeight: "700" },
+  rrWarning: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: theme.color.warning + "22", borderColor: theme.color.warning, borderWidth: 1,
+    padding: 12, borderRadius: 12,
+  },
+  rrWarningText: { color: theme.color.warning, fontSize: 12, fontWeight: "600", flex: 1 },
 });

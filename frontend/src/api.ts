@@ -51,6 +51,7 @@ export const api = {
     }),
 
   watchlist: () => request<{ items: any[] }>("/watchlist"),
+  watchlistDetails: (timeframe: string) => request<{ items: any[] }>(`/watchlist/details?timeframe=${timeframe}`),
   addWatchlist: (symbol: string) =>
     request("/watchlist", { method: "POST", body: JSON.stringify({ symbol }) }),
   delWatchlist: (symbol: string) => request(`/watchlist/${symbol}`, { method: "DELETE" }),

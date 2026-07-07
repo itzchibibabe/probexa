@@ -150,12 +150,16 @@ async def auth_session(body: SessionBody):
             "created_at": datetime.now(timezone.utc),
         })
 
-    await db.user_sessions.insert_one({
-        "session_token": session_token,
-        "user_id": user_id,
-        "created_at": datetime.now(timezone.utc),
-        "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
-    })
+    await db.user_sessions.update_one(
+        {"session_token": session_token},
+        {"$set": {
+            "session_token": session_token,
+            "user_id": user_id,
+            "updated_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+        }, "$setOnInsert": {"created_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
 
     return {"session_token": session_token, "user": {"user_id": user_id, "email": email, "name": name, "picture": picture}}
 
@@ -284,45 +288,79 @@ _scan_cache: Dict[str, Any] = {}
 _SCAN_TTL = 60  # seconds
 
 
-async def _fetch_one_setup(symbol: str, timeframe: str):
+async def _fetch_one_setup(symbol: str, timeframe: str, htf: Optional[str] = None):
     try:
         klines = await _fetch_klines(symbol, timeframe, 250)
-        setup = build_setup(symbol, klines)
-        return setup
+        htf_klines = None
+        if htf:
+            try:
+                htf_klines = await _fetch_klines(symbol, htf, 200)
+            except Exception:
+                pass
+        return build_setup(symbol, klines, htf_klines=htf_klines)
     except Exception as e:
         logger.debug("scan pair %s failed: %s", symbol, e)
         return None
 
 
+HTF_MAP = {"5m": "30m", "15m": "1h", "30m": "2h", "1h": "4h", "4h": "1d", "1d": "1w"}
+
+
+async def _get_universe() -> List[str]:
+    """All USDT perpetual swap symbols on OKX. Cached 10 min."""
+    key = "universe"
+    now = _time.time()
+    cached = _scan_cache.get(key)
+    if cached and (now - cached["at"] < 600):
+        return cached["data"]
+    try:
+        data = await _okx_get("/api/v5/public/instruments", {"instType": "SWAP"})
+        pairs = sorted({from_okx_inst(x["instId"]) for x in data if x.get("state") == "live" and x["instId"].endswith("-USDT-SWAP")})
+        _scan_cache[key] = {"at": now, "data": pairs}
+        return pairs
+    except Exception as e:
+        logger.warning("universe fetch failed: %s", e)
+        return list(DEFAULT_UNIVERSE)
+
+
 @api.get("/scan")
-async def scan_markets(timeframe: str = "1h", limit: int = 20):
-    key = f"{timeframe}:{limit}"
+async def scan_markets(timeframe: str = "1h", limit: int = 300, hi_tf_confirm: int = 0, liq_sweep: int = 0):
+    key = f"scan:{timeframe}:{limit}:{hi_tf_confirm}"
     now = _time.time()
     cached = _scan_cache.get(key)
     if cached and (now - cached["at"] < _SCAN_TTL):
         return cached["data"]
 
-    universe = DEFAULT_UNIVERSE[:limit]
-    tasks = [_fetch_one_setup(s, timeframe) for s in universe]
-    setups = await _asyncio.gather(*tasks)
+    universe = (await _get_universe())[:limit]
+    htf = HTF_MAP.get(timeframe) if hi_tf_confirm else None
+    sem = _asyncio.Semaphore(15)
+
+    async def worker(sym):
+        async with sem:
+            return await _fetch_one_setup(sym, timeframe, htf=htf)
+
+    setups = await _asyncio.gather(*(worker(s) for s in universe))
     setups = [s for s in setups if s]
+
+    # If liquidity sweep flag not requested, hide status field so UI won't render badge
+    if not liq_sweep:
+        for s in setups:
+            s["liquidity_sweep_status"] = None
 
     best_setups = sorted(
         [s for s in setups if s["ai_score"] >= 80 and s["action"] in ("BUY", "SELL")],
         key=lambda x: (x["ai_score"], x["confidence"]),
         reverse=True,
-    )[:8]
+    )[:12]
 
     preparing = sorted(
-        [s for s in setups if 65 <= s["ai_score"] < 90 and s["direction"] != "neutral"],
+        [s for s in setups if 55 <= s["ai_score"] < 90 and s["direction"] != "neutral"],
         key=lambda x: x["ai_score"],
         reverse=True,
-    )[:8]
-    # Exclude items already in best_setups
+    )
     best_syms = {s["symbol"] for s in best_setups}
-    preparing = [p for p in preparing if p["symbol"] not in best_syms][:6]
+    preparing = [p for p in preparing if p["symbol"] not in best_syms][:10]
 
-    # Sanitize snapshots (drop heavy fields) to reduce payload
     def strip(s):
         s = dict(s)
         s.pop("snapshot", None)
@@ -333,6 +371,7 @@ async def scan_markets(timeframe: str = "1h", limit: int = 20):
         "best_setups": [strip(s) for s in best_setups],
         "preparing": [strip(s) for s in preparing],
         "scanned_count": len(setups),
+        "universe_size": len(universe),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     _scan_cache[key] = {"at": now, "data": data}
@@ -340,12 +379,15 @@ async def scan_markets(timeframe: str = "1h", limit: int = 20):
 
 
 @api.get("/setup/{symbol}")
-async def get_setup(symbol: str, timeframe: str = "1h"):
+async def get_setup(symbol: str, timeframe: str = "1h", hi_tf_confirm: int = 0, liq_sweep: int = 0):
     """Compute a full setup for a single symbol (rule-based, no LLM)."""
-    klines = await _fetch_klines(symbol.upper(), timeframe, 250)
-    setup = build_setup(symbol.upper(), klines)
+    sym = symbol.upper()
+    htf = HTF_MAP.get(timeframe) if hi_tf_confirm else None
+    setup = await _fetch_one_setup(sym, timeframe, htf=htf)
     if not setup:
         raise HTTPException(400, "Not enough data")
+    if not liq_sweep:
+        setup["liquidity_sweep_status"] = None
     setup.pop("snapshot", None)
     return setup
 
@@ -555,6 +597,45 @@ async def add_watchlist(body: WatchlistAdd, user: dict = Depends(require_user)):
 async def del_watchlist(symbol: str, user: dict = Depends(require_user)):
     await db.watchlist.delete_one({"user_id": user["user_id"], "symbol": symbol.upper()})
     return {"ok": True}
+
+
+@api.get("/watchlist/details")
+async def watchlist_details(timeframe: str = "1h", user: dict = Depends(require_user)):
+    """Return watchlist items enriched with signal/grade/score/confidence."""
+    items = await db.watchlist.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(200)
+    syms = [it["symbol"] for it in items]
+    sem = _asyncio.Semaphore(10)
+
+    async def worker(sym):
+        async with sem:
+            return await _fetch_one_setup(sym, timeframe)
+
+    setups = await _asyncio.gather(*(worker(s) for s in syms))
+    out = []
+    for it, setup in zip(items, setups):
+        if setup:
+            out.append({
+                "symbol": it["symbol"],
+                "price": setup["price"],
+                "change_pct": setup["change_pct"],
+                "action": setup["action"],
+                "trade_grade": setup["trade_grade"],
+                "ai_score": setup["ai_score"],
+                "confidence": setup["confidence"],
+                "direction": setup["direction"],
+            })
+        else:
+            out.append({
+                "symbol": it["symbol"],
+                "price": None,
+                "change_pct": None,
+                "action": "WAIT",
+                "trade_grade": "-",
+                "ai_score": 0,
+                "confidence": 0,
+                "direction": "neutral",
+            })
+    return {"items": out, "timeframe": timeframe}
 
 
 class AlertCreate(BaseModel):
@@ -879,15 +960,6 @@ async def send_push(recipients: List[str], data: dict, idempotency_key: Optional
         logger.warning("Push send failed (non-blocking): %s", e)
 
 
-# =====================================================
-# USER PREFERENCES — name, currency, notification prefs
-# =====================================================
-class PrefsBody(BaseModel):
-    display_name: Optional[str] = None
-    currency: Optional[str] = None
-    notifications: Optional[Dict[str, bool]] = None
-
-
 DEFAULT_PREFS = {
     "display_name": "",
     "currency": "USD",
@@ -898,7 +970,18 @@ DEFAULT_PREFS = {
         "daily_loss_reached": True,
         "daily_summary": False,
     },
+    "advanced": {
+        "liquidity_sweep_detection": False,
+        "higher_timeframe_confirmation": False,
+    },
 }
+
+
+class PrefsBody(BaseModel):
+    display_name: Optional[str] = None
+    currency: Optional[str] = None
+    notifications: Optional[Dict[str, bool]] = None
+    advanced: Optional[Dict[str, bool]] = None
 
 
 @api.get("/prefs")
@@ -908,6 +991,7 @@ async def get_prefs(user: dict = Depends(require_user)):
         "display_name": doc.get("display_name", user.get("name", "")),
         "currency": doc.get("currency", DEFAULT_PREFS["currency"]),
         "notifications": {**DEFAULT_PREFS["notifications"], **(doc.get("notifications") or {})},
+        "advanced": {**DEFAULT_PREFS["advanced"], **(doc.get("advanced") or {})},
     }
     return prefs
 
@@ -915,14 +999,17 @@ async def get_prefs(user: dict = Depends(require_user)):
 @api.put("/prefs")
 async def put_prefs(body: PrefsBody, user: dict = Depends(require_user)):
     update: Dict[str, Any] = {"user_id": user["user_id"], "updated_at": datetime.now(timezone.utc)}
+    current = await db.user_prefs.find_one({"user_id": user["user_id"]}, {"_id": 0}) or {}
     if body.display_name is not None:
         update["display_name"] = body.display_name.strip()
     if body.currency is not None:
         update["currency"] = body.currency.upper().strip()
     if body.notifications is not None:
-        current = await db.user_prefs.find_one({"user_id": user["user_id"]}, {"_id": 0}) or {}
         merged = {**DEFAULT_PREFS["notifications"], **(current.get("notifications") or {}), **body.notifications}
         update["notifications"] = merged
+    if body.advanced is not None:
+        merged = {**DEFAULT_PREFS["advanced"], **(current.get("advanced") or {}), **body.advanced}
+        update["advanced"] = merged
     await db.user_prefs.update_one({"user_id": user["user_id"]}, {"$set": update}, upsert=True)
     return await get_prefs(user)
 

@@ -18,44 +18,15 @@ export default function TabsLayout() {
           paddingTop: 6,
           paddingBottom: Platform.OS === "ios" ? 24 : 8,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Analyze",
-          tabBarIcon: ({ color }) => <Ionicons name="pulse" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="watchlist"
-        options={{
-          title: "Watchlist",
-          tabBarIcon: ({ color }) => <Ionicons name="list" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="alerts"
-        options={{
-          title: "Alerts",
-          tabBarIcon: ({ color }) => <Ionicons name="notifications" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="journal"
-        options={{
-          title: "Journal",
-          tabBarIcon: ({ color }) => <Ionicons name="book" size={22} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="tools"
-        options={{
-          title: "Tools",
-          tabBarIcon: ({ color }) => <Ionicons name="calculator" size={22} color={color} />,
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: "Analyze", tabBarIcon: ({ color }) => <Ionicons name="pulse" size={22} color={color} /> }} />
+      <Tabs.Screen name="watchlist" options={{ title: "Watchlist", tabBarIcon: ({ color }) => <Ionicons name="list" size={22} color={color} /> }} />
+      <Tabs.Screen name="alerts" options={{ title: "Alerts", tabBarIcon: ({ color }) => <Ionicons name="notifications" size={22} color={color} /> }} />
+      <Tabs.Screen name="journal" options={{ title: "Journal", tabBarIcon: ({ color }) => <Ionicons name="book" size={22} color={color} /> }} />
+      <Tabs.Screen name="tools" options={{ title: "Tools", tabBarIcon: ({ color }) => <Ionicons name="calculator" size={22} color={color} /> }} />
+      <Tabs.Screen name="settings" options={{ title: "Settings", tabBarIcon: ({ color }) => <Ionicons name="settings" size={22} color={color} /> }} />
     </Tabs>
   );
 }

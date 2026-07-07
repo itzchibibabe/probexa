@@ -63,18 +63,15 @@ export default function Home() {
   return (
     <SafeAreaView edges={["top"]} style={styles.root} testID="home-screen">
       <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.brand}>{greeting()}{prefs.display_name ? `, ${prefs.display_name}` : ""} 👋</Text>
-          <Text style={styles.tag}>Only High-Probability Setups.</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.brand} numberOfLines={1} ellipsizeMode="tail">
+            {greeting()}{prefs.display_name ? `, ${prefs.display_name}` : ""} 👋
+          </Text>
+          <Text style={styles.tag} numberOfLines={1}>Only High-Probability Setups.</Text>
         </View>
-        <View style={{ flexDirection: "row", gap: 4 }}>
-          <Pressable testID="home-search-btn" onPress={openSearch} style={styles.iconBtn}>
-            <Ionicons name="search" size={22} color={theme.color.brand} />
-          </Pressable>
-          <Pressable testID="home-settings-btn" onPress={() => router.push("/settings")} style={styles.iconBtn}>
-            <Ionicons name="settings-outline" size={22} color={theme.color.onSurfaceSecondary} />
-          </Pressable>
-        </View>
+        <Pressable testID="home-search-btn" onPress={openSearch} style={styles.iconBtn} hitSlop={8}>
+          <Ionicons name="search" size={22} color={theme.color.brand} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -276,11 +273,12 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.surface },
   headerRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4,
+    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4, gap: 8,
   },
-  brand: { color: theme.color.onSurface, fontSize: 24, fontWeight: "800", letterSpacing: 0.5 },
+  headerLeft: { flex: 1, minWidth: 0 },
+  brand: { color: theme.color.onSurface, fontSize: 20, fontWeight: "800", letterSpacing: 0.3 },
   tag: { color: theme.color.onSurfaceSecondary, fontSize: 12, marginTop: 2 },
-  iconBtn: { padding: 8 },
+  iconBtn: { padding: 8, flexShrink: 0 },
   scroll: { padding: 16, gap: 10, paddingBottom: 40 },
   tfRow: { gap: 8, paddingVertical: 2, paddingBottom: 4 },
   chip: {
